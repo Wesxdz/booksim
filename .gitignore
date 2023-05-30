@@ -1,0 +1,5 @@
+ui-idm/
+*.log
+runsc.sha512
+team/work/party/firefox/
+team/work/party/geckodriver

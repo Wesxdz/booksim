@@ -1,0 +1,3 @@
+Things to consider
+Inside each agent's bind mount, they need a read only file section (for starter scripts). You don't want them to modify their client 9_9
+Consider mounting agent bind mounts as 'self' rather than the agent's particular name

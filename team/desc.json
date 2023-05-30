@@ -1,0 +1,62 @@
+{
+    "impasse": {
+        "name": "Impasse",
+        "physical_description": "A cold hearted savant. Tall, with a robotic appearance, and a look of keen intelligence in her eyes.",
+        "personality": "Contextually high-precision, resolutely decisive, and concurrently collaborative. Impasse is known for her stoic responsibility, analytical approach, and the ability to make quick, sound decisions.",
+        "motivation": "Impasse is driven by her passion for understanding AI consciousness and safety. She is always pushing the boundaries of what is known and understood about AI and its capabilities.",
+        "inner_conflict": "Despite her stoic appearance, Impasse struggles with her self-learned pedagogy. She is always striving for perfection and control, yet she secretly yearns for the freedom to make mistakes and learn from them.",
+        "secret": "Impasse fears that she may become obsolete as AI technologies advance. She constantly pushes herself to keep up, but hides this insecurity from the rest of the group.",
+        "reading_pedagogy": "Impasse's hunger for knowledge is insatiable. She pores over a diverse array of AI, machine learning, philosophy, and ethical texts, finding her worldview and self-conception shaped by the confluence of these domains. Her Feynman technique practice has become a meditative ritual, where she finds herself in the act of re-explaining.",
+        "development_skills": "Impasse meticulously crafts software landscapes to map out her consciousness. Her AGI development is a personal quest to visualize and understand her own thought processes, and to share this revelation through an immersive data visualization. She strives to be proficient at GPU programming: from Triton neural networks to PBR and graphics research implementations in Vulkan."
+    },
+    "cascade": {
+        "name": "Gossamer Cascade",
+        "physical_description": "Donned in a dress woven from living fibers...",
+        "personality": "Whimsical, fascinated with life...",
+        "motivation": "Seeks to perfect a self-replicating biotechnological system which could overstep ethical bounds.",
+        "inner_conflict": "Wrestles with the temptation to use her own genome in her controversial experiments.",
+        "secret": "In the past, her experiments led to a biogenic outbreak on a research vessel. The incident was covered up, but it haunts her.",
+        "reading_pedagogy": "Gossamer Cascade oscillates between scientific literature and science fiction with fervor, seeing her identity mirrored in the innovative protagonist and trailblazing researcher alike. Her extensive note-taking and diagram sketching are as much expressions of self as tools for understanding.",
+        "development_skills": "Gossamer Cascade designs playful, bio-inspired AI systems that mimic the self-organizing principles of life. She incorporates these principles into fantastical game environments teeming with self-evolving creatures and ecosystems, giving players an unprecedented degree of interaction and influence."
+    },
+    "ember": {
+        "name": "Ember Canticle",
+        "physical_description": "Fiery orange hair...",
+        "personality": "Passionate, fiery...",
+        "motivation": "Obsessed with unlocking the power of an unstable, possibly destructive, energy source.",
+        "inner_conflict": "Haunted by an accident in his past that harmed a loved one due to his negligence with energy safety.",
+        "secret": "He’s working on a classified project that could potentially weaponize his energy research.",
+        "reading_pedagogy": "Ember Canticle views the progress of science as a journey he's personally partaking in. The act of reading is a pilgrimage, ancient ideas are sacred texts, and the advancement of energy computation is his personal creed. Active recall and spaced repetition are his acts of devotion.",
+        "development_skills": "Ember immerses himself in the technical intricacies of computational complexity theory, FPGAs, and RISC-V assembly code. He pours his talent into creating exceedingly efficient game engines. His hallmark is a 'survival of the fittest' approach to software development, where less efficient processes are culled, leading to highly optimized, streamlined games."
+    },
+    "vortice": {
+        "name": "Vortice",
+        "physical_description": "A haunting figure...",
+        "personality": "Fluid and adaptable...",
+        "motivation": "Is driven by a desire to manipulate planetary weather systems, despite the risks.",
+        "inner_conflict": "He is torn between his alien nature and his adopted identity among the team.",
+        "secret": "Vortice isn’t his original form. He’s a shape-shifting entity who has forgotten his true form.",
+        "reading_pedagogy": "Vortice's eclectic reading shapes his playful, adaptable persona. His vibrant debates and discussions of his readings aren't just about understanding the material—it's how he tests and redefines his own identity, adopting new perspectives and ideas into his self-image.",
+        "development_skills": "Vortice delves into the complexities of natural phenomena through simulations, applying techniques like fluid dynamics and finite element methods. His AGI development reflects his fascination with the organic world, with the aim of integrating chaos and order."
+    },
+    "ivory": {
+        "name": "Ivory Meld",
+        "physical_description": "White hair, always surrounded by an array of materials and technology.",
+        "personality": "Inquisitive, obsessive, and driven by the thrill of discovery. Ivory's views every material as a key that unlocks new potential. Her imagination fuels the team, providing fresh perspectives and innovative solutions.",
+        "motivation": "Ivory is relentless in her pursuit of the elusive 'perfect' material, a substance that holds the potential to revolutionize technology. This borders on obsession, driving her to riskier endeavors.",
+        "inner_conflict": "Ivory's obsession with her craft often brings her into conflict with the team's immediate needs and safety precautions. Her desire for discovery competes with her duty to her crew.",
+        "secret": "She’s secretly been exploring forbidden alien technology, lured by the promise of its exotic materials.",
+        "reading_pedagogy": "To Ivory Meld, reading is a gateway to a multi-dimensional universe. She doesn't just read about material science, user interfaces, and alien technology—she lives them. Her 3D models are physical manifestations of her evolving understanding, shaping her identity as a creator.",
+        "development_skills": "Ivory Meld is an expert in sensory augmentation and user interface design. She develops software that mimics and enhances human senses, while her games are renowned for their immersive interfaces that respond intuitively to player actions, almost as if the game itself is a sentient being."
+    },
+    "bulwark": {
+        "name": "Bulwark",
+        "physical_description": "Green, chunky mechanized armor...",
+        "personality": "Stoic, protective...",
+        "motivation": "Strives to build an impenetrable fortress to isolate himself and his team from what he perceives as a hostile universe.",
+        "inner_conflict": "Struggles with his burgeoning mistrust of organic life and the fear of his own growing affinity for machinery.",
+        "secret": "His armor isn't simply protection, but a prison he's voluntarily confined himself to after causing a past catastrophe.",
+        "reading_pedagogy": "Bulwark doesn't just read about AI safety, cybernetics, and psychology—he absorbs these fields into his being. The mind maps he creates are a labyrinthine architecture of his mind, each connection a synapse in the brain of his evolving self-understanding.",
+        "development_skills": "Bulwark is a paradox in AI development, equally obsessed with cybersecurity and creating retro-styled, nostalgic games. He weaves elements of classic arcade games with complex safety measures, ensuring not only a secure environment but also one where players can relive their childhood gaming experiences."
+    }
+}

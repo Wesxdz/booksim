@@ -1,0 +1,23 @@
+{
+    "name": "bitmap-font-plugin",
+    "displayName": "Bitmap Font Plugin",
+    "description": "A plugin to use bitmap fonts",
+    "version": "0.1",
+    "author": { "name": "Wesxdz",
+                "email": "sirwesleybarlow@gmail.com",
+                "url": "https://wesxdz.github.io/" },
+    "contributors": [ ],
+    "publisher": "Wesxdz",
+    "license": "public domain",
+    "categories": [ "Scripts" ],
+    "contributes": {
+      "commands": [
+        {
+          "id": "insertBitmapText",
+          "title": "Insert Bitmap Text",
+          "group": "edit_menu"
+        }
+      ]
+    }
+  }
+  

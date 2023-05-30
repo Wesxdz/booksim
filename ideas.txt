@@ -1,0 +1,19 @@
+Early Action/Quest Ideas
+What is dichotomy between actions and quests? Quests->drive action competency/practice
+
+Computing Taks that people frequently do
+Create/Rename/Delete File/Directory
+User Interface Navigation (ie 'click mouse') Should agents have a desktop environment? Why not lol, they should probably develop their own
+Searching for File (by direct search/embedding) honestly most file browsers have bad file search, might be setting the agents up for failure I can't even find my own files half the time
+
+For UI-IDM, integrate detection of text characters typed as well as speech
+For example optical characters typed into words temporally can also be used as a pairing of user interface navigation
+
+What is the best thing to read?
+Some things are better to read than other things
+SoTA AI can memorize books (no problem since memory is affordable), QA at human level
+What can't it do in terms of reading books at human level?
+1. Imagination (not in terms of senses, but subjective effects, creativity, empathy, etc)
+https://psychonautwiki.org/wiki/Subjective_effect_index
+For example LLMs feel no pain, have unknown consciousness, can they experience subjective effects?
+Hypothesis: Reading
