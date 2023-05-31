@@ -19,7 +19,7 @@ agents = ["impasse", "cascade", "ember", "vortice", "ivory", "bulwark"]
 memory_limit = "4g"  # This sets a limit of 4 gigabytes
 
 # Define base directory
-base_path = "/home/aeri/ant/dojo/pasta/team/work/"
+base_path = "/home/aeri/ant/dojo/booksim/team/work/"
 
 # Create the directory if it doesn't exist already
 Path(base_path).mkdir(parents=True, exist_ok=True)
@@ -83,7 +83,7 @@ interface_container = client.containers.run(
     "my_interface:latest",
     name="RPG",
     volumes={
-        shared_path: {'bind': '/vacuum_shield', 'mode': 'rw'}, 
+        shared_path: {'bind': '/party', 'mode': 'rw'}, 
         rpg_path: {'bind': '/rpg', 'mode': 'rw'},
         game_world_path: {'bind': '/game_world', 'mode': 'rw'}  # Read-write access for RPG
     },
@@ -96,6 +96,9 @@ interface_container = client.containers.run(
 
 subprocess.run(['sudo', 'chown', '-R', '0:0', rpg_path])
 subprocess.run(['sudo', 'chmod', '-R', '777', rpg_path])
+
+subprocess.run(['sudo', 'chown', '-R', '0:0', game_world_path])
+subprocess.run(['sudo', 'chmod', '-R', '777', game_world_path])
 
 
 print("Containers created successfully.")

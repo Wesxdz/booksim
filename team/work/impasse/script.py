@@ -6,7 +6,7 @@ from selenium.webdriver.firefox.service import Service
 from bs4 import BeautifulSoup
 
 # Directory where Firefox and geckodriver are located
-firefox_dir = "/vacuum_shield"
+firefox_dir = "/party"
 
 
 print(f"Directory exists: {os.path.exists(firefox_dir)}")

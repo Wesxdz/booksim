@@ -19,7 +19,7 @@ agents = {
 }
 
 # Define base path
-base_path = "/home/aeri/ant/dojo/pasta/team/work/"
+base_path = "/home/aeri/ant/dojo/booksim/team/work/"
 
 # Define log directory
 log_dir = os.path.join(base_path, 'party')

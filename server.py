@@ -24,6 +24,7 @@ def handle_request(connection):
 
             logging.info(f"Received request: {request}")
 
+            agent_stats_dir = "/game_world" # TODO: Potentially consider distinct game worlds containing 'virtual' data
             # Check the agent's budget
             stats_file = os.path.join(agent_stats_dir, f'{agent}_stats.json')
             with open(stats_file, 'r') as f:

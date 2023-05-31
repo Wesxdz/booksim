@@ -19,7 +19,7 @@ def download_and_extract_geckodriver(dest_dir):
     file.close()
 
 # Set the directory where you want to store the binaries
-bind_mount_dir = "/home/aeri/ant/dojo/pasta/team/work/party"
+bind_mount_dir = "/home/aeri/ant/dojo/booksim/team/work/party"
 
 download_and_extract_firefox(bind_mount_dir)
 download_and_extract_geckodriver(bind_mount_dir)

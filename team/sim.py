@@ -57,7 +57,7 @@ character_profiles = {
 prepass = openai.ChatCompletion.create(
     model="gpt-3.5-turbo",
     messages=[
-        {"role": "system", "content": f"Artificial super intelligence developing 'Book Simulator': a transhumanist flavored PASTA (Process for Automating Scientific and Technological Advancement) RPG for training AGI"},
+        {"role": "system", "content": f"Artificial super intelligence developing 'Book Simulator': a transhumanist flavored booksim (Process for Automating Scientific and Technological Advancement) RPG for training AGI"},
         {"role": "user", "content": character_profiles },
         # TODO: Linguistic-spatial context?
         {"role": "user", "content": "Select ONLY ONE of the characters and start a conversation about development of the Book Simulator 'a game engine that uses machine imagination to inject characters into books for learning' in the tone of the character's personality. Use format Character Name: Dialogue" },
@@ -69,7 +69,7 @@ message_seq.append(prepass.choices[0].message.content)
 
 for i in range(5):
     conversation=[
-        {"role": "system", "content": f"Artificial super intelligence developing 'Book Simulator': a transhumanist flavored PASTA (Process for Automating Scientific and Technological Advancement) RPG for training AGI"},
+        {"role": "system", "content": f"Artificial super intelligence developing 'Book Simulator': a transhumanist flavored booksim (Process for Automating Scientific and Technological Advancement) RPG for training AGI"},
         {"role": "user", "content": character_profiles },
     ]
     for message in message_seq:

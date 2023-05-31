@@ -12,11 +12,11 @@ client = docker.from_env()
 party = "party"
 
 # Load agent descriptions from JSON file
-with open("/home/aeri/ant/dojo/pasta/team/desc.json", "r") as f:
+with open("/home/aeri/ant/dojo/booksim/team/desc.json", "r") as f:
     agent_descriptions = json.load(f)
 
 # Define base path
-base_path = "/home/aeri/ant/dojo/pasta/team/work/"
+base_path = "/home/aeri/ant/dojo/booksim/team/work/"
 
 # Define log directory
 log_dir = os.path.join(base_path, 'party')
@@ -88,7 +88,8 @@ with open(os.path.join(interface_path, 'server.py'), 'w') as f:
     f.write(server_script)
 
 # Run the server script in the interface container
-result = interface_container.exec_run("python3 /rpg/server.py")
+server_result = interface_container.exec_run("python3 /rpg/server.py")
+print(server_result)
 
 # Load client script from file
 with open('client.py', 'r') as file:
@@ -120,10 +121,8 @@ for agent in agent_descriptions.keys():
         f.write(observer_script)
 
     # Run the client script
-    print("aha")
-    print("python3 /{}/observer.py {}".format(agent, agent))
-    result = container.exec_run("python3 /{}/observer.py {}".format(agent, agent), detach=True)
-    print(result)
+    # print("python3 /{}/observer.py {}".format(agent, agent))
+    # result = container.exec_run("python3 /{}/observer.py {}".format(agent, agent), detach=True)
     # print("STDOUT:\n", result.output.decode())
     # print("STDERR:\n", result.error)  # This should display error if any.
 

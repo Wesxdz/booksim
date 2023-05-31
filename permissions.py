@@ -10,11 +10,11 @@ client = docker.from_env()
 party = "party"
 
 # Load agent descriptions from JSON file
-with open("/home/aeri/ant/dojo/pasta/team/desc.json", "r") as f:
+with open("/home/aeri/ant/dojo/booksim/team/desc.json", "r") as f:
     agent_descriptions = json.load(f)
 
 # Define base path
-base_path = "/home/aeri/ant/dojo/pasta/team/work/"
+base_path = "/home/aeri/ant/dojo/booksim/team/work/"
 
 # Define log directory
 log_dir = os.path.join(base_path, 'party')
