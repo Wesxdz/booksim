@@ -17,7 +17,6 @@ def handle_request(connection):
         data = connection.recv(4096)
         if data:
             request = json.loads(data)
-            # TODO: MODIFY THE REQUEST!!!!!!
             agent = request['agent']  # Assuming agent's id is in the request
             model = request['model']
             messages = request['messages']
@@ -37,12 +36,13 @@ def handle_request(connection):
             else:
                 # Make the OpenAI API call
                 response = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",  # for now we limit model use
+                    model="gpt-4",  # for now we limit model use
                     messages=messages
                 )
                 output = response.choices[0].message.content
                 # if model = "gpt-3.5-turbo"
-                cost = response.usage.total_tokens / 1000.0 * 0.002
+                # cost = response.usage.total_tokens / 1000.0 * 0.002
+                cost = response.usage.total_tokens / 1000.0 * 0.03
                 logging.info(f"Sending response: {response}")
 
                 # Deduct the cost from the agent's budget

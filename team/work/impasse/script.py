@@ -1,4 +1,4 @@
-
+# script.py
 import sys
 import os
 from selenium import webdriver
@@ -7,7 +7,6 @@ from bs4 import BeautifulSoup
 
 # Directory where Firefox and geckodriver are located
 firefox_dir = "/party"
-
 
 print(f"Directory exists: {os.path.exists(firefox_dir)}")
 print(f"Directory contents: {os.listdir(firefox_dir)}")
@@ -53,6 +52,8 @@ try:
     soup = BeautifulSoup(page_source, 'html.parser')
     link_url = soup.find('div', class_='yuRUbf').a['href']
     print(link_url)
+    with open(f'web_search.log', 'a+') as f:
+        f.write(link_url + "\n")
 except Exception as e:
     print(f"Error while parsing source and printing link title: {e}")
 

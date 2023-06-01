@@ -2,7 +2,12 @@
 import socket
 import json
 import sys
+import subprocess
 
+def load_message_from_file(file_name):
+    with open(file_name, 'r') as file:
+        content = json.load(file)
+    return content
 
 def send_request(agent, model, messages):
     # Create a TCP/IP socket
@@ -24,6 +29,8 @@ def send_request(agent, model, messages):
         # Receive the response
         response = sock.recv(4096)
         print('Received:', response.decode())
+        print(eval(response.decode()).output)
+        subprocess.run(["python", "script.py", eval(response.decode()).output])
 
         # Write the output to the agent's bind mount
         with open(f'/{agent}/response.log', 'a+') as f:
@@ -34,8 +41,9 @@ def send_request(agent, model, messages):
 
 if __name__ == "__main__":
     agent = sys.argv[1]  # Get the agent's name from the command line arguments
-    model = 'gpt-3.5-turbo'
+    model = 'gpt-4'
+    personality = load_message_from_file('description.json')
     messages = [
-        {"role": "assistant", "content": f"My name is {agent}. I am in an RPG. What are the stats?"},
+        {"role": "assistant", "content": f"{personality} Roleplay as {agent}. Output web search query that I should research."},
     ]
     send_request(agent, model, messages)

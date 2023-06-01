@@ -55,7 +55,7 @@ character_profiles = {
 """
 
 prepass = openai.ChatCompletion.create(
-    model="gpt-3.5-turbo",
+    model="gpt-4",
     messages=[
         {"role": "system", "content": f"Artificial super intelligence developing 'Book Simulator': a transhumanist flavored booksim (Process for Automating Scientific and Technological Advancement) RPG for training AGI"},
         {"role": "user", "content": character_profiles },

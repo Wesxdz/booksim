@@ -4,7 +4,7 @@ import tiktoken
 def encode_file(filename):
 
     # Get the encoding for a specific model in the OpenAI API
-    enc = tiktoken.encoding_for_model("gpt-4")
+    enc = tiktoken.encoding_for_model("gpt-4-0314")
 
     # Read the file
     with open(filename, 'r') as file:

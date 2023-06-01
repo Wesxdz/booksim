@@ -1,5 +1,6 @@
 ui-idm/
 *.log
 runsc.sha512
-team/work/party/firefox/
-team/work/party/geckodriver
+team/work
+game/build
+game/SDL2-2.26.5

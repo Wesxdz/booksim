@@ -121,10 +121,8 @@ for agent in agent_descriptions.keys():
         f.write(observer_script)
 
     # Run the client script
-    # print("python3 /{}/observer.py {}".format(agent, agent))
+    print("python3 /{}/observer.py {}".format(agent, agent))
     # result = container.exec_run("python3 /{}/observer.py {}".format(agent, agent), detach=True)
-    # print("STDOUT:\n", result.output.decode())
-    # print("STDERR:\n", result.error)  # This should display error if any.
 
 
     # Write the output to the shared volume
