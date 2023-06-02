@@ -5,11 +5,12 @@
 
 ecs_entity_t input;
 
-typedef struct Position {
-    float x;
-    float y;
-} Position;
-ECS_COMPONENT_DECLARE(Position);
+
+typedef struct Transform {
+    float x, y;
+    float r_x, r_y;
+} Transform;
+ECS_COMPONENT_DECLARE(Transform);
 
 typedef struct Sprite {
     SDL_Texture* texture;
@@ -26,6 +27,10 @@ typedef struct Movable {
 } Movable;
 ECS_COMPONENT_DECLARE(Movable);
 
+typedef struct Layer {
+    ecs_id_t parent;
+    bool visible;
+} Layer;
 
 typedef struct Agent {
     char* name;
@@ -59,7 +64,7 @@ SDL_Window* window = NULL;
 SDL_Renderer* renderer = NULL;
 
 void Render(ecs_iter_t *it) {
-    Position *p = ecs_field(it, Position, 1);
+    Transform *p = ecs_field(it, Transform, 1);
     Sprite *s = ecs_field(it, Sprite, 2);
 
     for (int i = 0; i < it->count; i++) {
@@ -89,10 +94,18 @@ void Input(ecs_iter_t *it) {
     }
 }
 
+void PropagateTransforms(ecs_iter_t *it) {
+    Transform *t = ecs_field(it, Transform, 1);
+    Transform *t_parent = ecs_field(it, Transform, 2);
+    for (int i = 0; i < it->count; i++) {
+        t[i].x = t[i].r_x + t_parent[i].r_x;
+        t[i].y = t[i].r_y + t_parent[i].r_y;
+    }
+}
 
 void MouseMovableSelection(ecs_iter_t *it) {
     Movable *m = ecs_field(it, Movable, 1);
-    Position *p = ecs_field(it, Position, 2);
+    Transform *p = ecs_field(it, Transform, 2);
     Sprite* s = ecs_field(it, Sprite, 3);
     EventMouseClick *click_event = ecs_field(it, EventMouseClick, 4);
 
@@ -121,7 +134,7 @@ void MouseMovableSelection(ecs_iter_t *it) {
 
 void MouseMoveGrabbed(ecs_iter_t *it) {
     Movable *m = ecs_field(it, Movable, 1);
-    Position *p = ecs_field(it, Position, 2);
+    Transform *p = ecs_field(it, Transform, 2);
     Sprite* s = ecs_field(it, Sprite, 3);
     EventMouseMotion *move_event = ecs_field(it, EventMouseMotion, 4);
 
@@ -159,6 +172,94 @@ bool hasNamedParent(ase_layer_t* layer, const char* name) {
     return hasNamedParent(layer->parent, name);
 }
 
+// TODO: Refactor to util lib (ie keep observer/systems/util spatially separate)
+bool isLayerVisible(Layer* layer) {
+    // Base case: if there's no parent, return the layer's visibility
+    if (layer->parent == NULL) {
+        return layer->visible;
+    }
+    // Recursive case: check the next parent (if the current layer or any of its parents are invisible, the function returns false)
+    return layer->visible && isLayerVisible(layer->parent);
+}
+
+void parseAsepriteFile(ase_t* ase, ecs_world_t* world, SDL_Renderer* renderer) {
+    for (int f = 0; f < ase->frame_count; ++f) {
+        ase_frame_t* frame = ase->frames + f;
+        for (int i = 0; i < ase->layer_count; ++i) 
+        {
+            ase_cel_t* cel = frame->cels + i;
+            if (cel && cel->layer)
+            {
+                printf("Cel has layer %s\n", cel->layer->name);
+                if (cel->layer->parent)
+                {
+                    printf("Cel has parent layer %s\n", cel->layer->parent->name);
+                }
+                // TODO: These are all of the NORMAL layers!
+            }
+            ase_layer_t* layer = ase->layers + i;
+            if (layer->type == ASE_LAYER_TYPE_GROUP)
+            {
+                printf("Layer %s is group\n", layer->name);
+            }
+            
+            // ecs_entity_t e = ecs_set_name(world, 0, layer->name);
+            // printf("%s entity has %d layer type\n", ecs_get_name(world, e), (int)layer->type);
+            // if (layer->type == ASE_LAYER_TYPE_GROUP)
+            // {
+            //     printf("GROUP: %s\n", layer->name);
+            //     ecs_set(world, e, Transform, {0, 0, 0, 0}); // TODO: Eventually add relative positions/WYSIWYG
+            // }
+            // // if (layer->parent) {
+            // //     ecs_entity_t parent_entity = ecs_lookup(world, layer->parent->name);
+            // //     if (parent_entity && ecs_is_alive(world, parent_entity)) 
+            // //     {
+            // //         printf("%s Child Of %s\n", ecs_get_name(world, e), ecs_get_name(world, parent_entity));
+            // //         ecs_add_pair(world, e, EcsChildOf, parent_entity);
+            // //     }
+            // // }
+
+            // ase_cel_t* cel = frame->cels + i; // Frame one
+            // if (cel) {
+            //     if (!cel->layer)
+            //     {
+            //         printf("%s has no cel layer\n", layer->name);
+            //     }
+            //     // printf("Layer: %d Cel Layer %d\n", layer, cel->layer);
+            //     // printf("Layer Parent: %s Cel Layer Parent %s\n", layer->parent->name, cel->layer->parent->name);
+            //     if (layer && (layer->flags & ASE_LAYER_FLAGS_VISIBLE)) // TODO: Check if group parent is visible
+            //     {
+            //         if (layer->type == ASE_LAYER_TYPE_NORMAL)
+            //         {
+            //             printf("NORMAL: %s\n", layer->name);
+            //             ecs_set(world, e, Transform, {cel->x, cel->y, 0, 0});
+            //             SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, cel->w, cel->h);
+            //             if (texture == NULL) {
+            //                 printf("Failed to create texture: %s\n", SDL_GetError());
+            //                 continue;
+            //             }
+                        
+            //             SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+
+            //             if (SDL_UpdateTexture(texture, NULL, cel->pixels, cel->w * sizeof(Uint32)) < 0) {
+            //                 printf("Failed to update texture: %s\n", SDL_GetError());
+            //                 SDL_DestroyTexture(texture);
+            //                 continue;
+            //             }
+
+            //             ecs_set(world, e, Sprite, {texture, cel->w, cel->h});
+
+            //             if (hasNamedParent(layer, "agents")) {
+            //                 ecs_set(world, e, Movable, {false});
+            //                 ecs_set(world, e, Agent, {"Agent Name"});
+            //                 ecs_set(world, e, Stats, {0, 0});
+            //             }
+            //         }
+            //     }
+            // }
+        }
+    }
+}
 
 int main(int argc, char *argv[]) {
 
@@ -166,7 +267,7 @@ int main(int argc, char *argv[]) {
     ecs_world_t *world = ecs_init();
     input = ecs_set_name(world, 0, "input");
 
-    ECS_COMPONENT_DEFINE(world, Position);
+    ECS_COMPONENT_DEFINE(world, Transform);
     ECS_COMPONENT_DEFINE(world, Sprite);
     ECS_COMPONENT_DEFINE(world, Movable);
     ECS_COMPONENT_DEFINE(world, EventMouseClick);
@@ -175,7 +276,7 @@ int main(int argc, char *argv[]) {
     ECS_COMPONENT_DEFINE(world, ConsumeEvent);
     ECS_COMPONENT_DEFINE(world, EventMouseMotion);
 
-   ase_t* ase = cute_aseprite_load_from_file("table.ase", NULL);
+   ase_t* ase = cute_aseprite_load_from_file("shapes.ase", NULL);
 
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
@@ -192,51 +293,27 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    for (int i = 0; i < ase->frame_count; i++) {
-        ase_frame_t* frame = ase->frames + i;
-        for (int j = 0; j < ase->layer_count; j++) {
-            ase_cel_t* cel = frame->cels + j;
-            if (cel) {
-                if (cel->layer && cel->layer->flags & ASE_LAYER_FLAGS_VISIBLE) // TODO: Check if group parent is visible
-                {
-                    SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, cel->w, cel->h);
-                    if (texture == NULL) {
-                        printf("Failed to create texture: %s\n", SDL_GetError());
-                        continue;
-                    }
-                    
-                    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+    parseAsepriteFile(ase, world, renderer);
 
-                    if (SDL_UpdateTexture(texture, NULL, cel->pixels, cel->w * sizeof(Uint32)) < 0) {
-                        printf("Failed to update texture: %s\n", SDL_GetError());
-                        SDL_DestroyTexture(texture);
-                        continue;
-                    }
-
-                    ecs_entity_t e = ecs_new(world, 0);
-                    ecs_set(world, e, Position, {cel->x, cel->y});
-                    ecs_set(world, e, Sprite, {texture, cel->w, cel->h});
-
-                    // printf("Add movable\n");
-                    // if (cel->layer->parent) {
-                    //     printf("%s\n", cel->layer->parent->name);
-                    // }
-                    if (hasNamedParent(cel->layer, "agents")) {
-                        ecs_set(world, e, Movable, {false});
-                        ecs_set(world, e, Agent, {"Agent Name"});
-                        ecs_set(world, e, Stats, {0, 0});
-                    }
-                }
-            }
-        }
-    }
-
-    ECS_SYSTEM(world, MouseMovableSelection, EcsPostUpdate, Movable, Position, Sprite, EventMouseClick(input));
-    ECS_SYSTEM(world, MouseMoveGrabbed, EcsPostUpdate, Movable, Position, Sprite, EventMouseMotion(input));
+    ECS_SYSTEM(world, MouseMovableSelection, EcsPostUpdate, Movable, Transform, Sprite, EventMouseClick(input));
+    ECS_SYSTEM(world, MouseMoveGrabbed, EcsPostUpdate, Movable, Transform, Sprite, EventMouseMotion(input));
     // ECS_OBSERVER(world, MouseMove, EcsOnSet, EventMouseMotion(input));
     ECS_SYSTEM(world, Input, EcsPreUpdate, [inout] *());
-    ECS_SYSTEM(world, Render, EcsOnUpdate, Position, Sprite);
+    ECS_SYSTEM(world, Render, EcsPostFrame, Transform, Sprite);
     ECS_SYSTEM(world, ConsumeEvents, EcsPostFrame, (ConsumeEvent, *));
+
+    ecs_entity_t move_sys = ecs_system(world, {
+    .entity = ecs_entity(world, { .name = "MoveSystem", .add = { ecs_dependson(EcsPreStore) } }),
+    .query.filter.terms = {
+        {ecs_id(Transform)},
+        { ecs_id(Transform), .src = {
+            .flags = EcsCascade,
+            .trav = EcsChildOf
+        }},
+        },  
+    .callback = PropagateTransforms
+    });
+    
 
     while (ecs_progress(world, 0)) {
         SDL_RenderPresent(renderer);

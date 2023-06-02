@@ -7,6 +7,7 @@ set(SOURCES main.c)
 # Add the executable target
 add_executable(agent ${SOURCES})
 include_directories("include")
+set(CMAKE_BUILD_TYPE Debug)
 
 # Add the subdirectory for flecs
 add_subdirectory(flecs)
