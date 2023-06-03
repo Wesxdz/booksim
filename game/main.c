@@ -1,5 +1,6 @@
 #include "flecs.h"
 #include <SDL.h>
+#include <SDL_ttf.h>
 #define CUTE_ASEPRITE_IMPLEMENTATION
 #include "cute_aseprite.h"
 
@@ -11,6 +12,17 @@ typedef struct Transform {
     float r_x, r_y;
 } Transform;
 ECS_COMPONENT_DECLARE(Transform);
+
+typedef struct Position {
+    int x, y;
+} Position;
+ECS_COMPONENT_DECLARE(Position);
+
+typedef struct Size {
+    int width, height;
+} Size;
+ECS_COMPONENT_DECLARE(Size);
+
 
 typedef struct Sprite {
     SDL_Texture* texture;
@@ -55,10 +67,44 @@ typedef struct EventMouseClick {
 } EventMouseClick;
 ECS_COMPONENT_DECLARE(EventMouseClick);
 
+typedef struct EventTextInput {
+    char text[33]; // 32 characters + null-terminating character
+} EventTextInput;
+ECS_COMPONENT_DECLARE(EventTextInput);
+
+typedef struct Cursor {
+    Uint32 lastToggle;
+    Uint8 visible;
+} Cursor;
+ECS_COMPONENT_DECLARE(Cursor);
+
 typedef struct ConsumeEvent {
     bool mock;
 } ConsumeEvent;
 ECS_COMPONENT_DECLARE(ConsumeEvent);
+
+typedef struct Text {
+    char str[256];
+    SDL_Surface *surface;
+    SDL_Texture *texture;
+    int changed;
+} Text;
+ECS_COMPONENT_DECLARE(Text);
+
+
+typedef struct Textbox {
+    char text[256];
+    int cursorPosition;
+    int active;
+} Textbox;
+ECS_COMPONENT_DECLARE(Textbox);
+
+typedef struct Font {
+    TTF_Font* font;
+} Font;
+ECS_COMPONENT_DECLARE(Font);
+
+
 
 SDL_Window* window = NULL;
 SDL_Renderer* renderer = NULL;
@@ -90,6 +136,9 @@ void Input(ecs_iter_t *it) {
         } else if (e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP) {
             ecs_set(it->world, input, EventMouseClick, {e.button.x, e.button.y, e.button.button, e.button.state});
             ecs_set_pair(it->world, input, ConsumeEvent, ecs_id(EventMouseClick), {});
+        }  else if (e.type == SDL_TEXTINPUT) {
+            ecs_set(it->world, input, EventTextInput, {e.text.text});
+            ecs_set_pair(it->world, input, ConsumeEvent, ecs_id(EventTextInput), {});
         }
     }
 }
@@ -163,6 +212,85 @@ void MouseMoveGrabbed(ecs_iter_t *it) {
     }
 }
 
+void TextboxEntry(ecs_iter_t* it) {
+    Textbox* tb = ecs_field(it, Textbox, 1);
+    EventTextInput* input = ecs_field(it, EventTextInput, 2);
+    
+    for (int i = 0; i < it->count; i++) {
+        // Check if the textbox is active
+        if (tb[i].active) {
+            // Append the input text to the textbox's text, but ensure that you do not exceed the textbox's max length
+            // Note: This simplistic approach does not handle UTF-8 encoded text correctly.
+            strncat(tb[i].text, input[i].text, 256 - strlen(tb[i].text));
+            printf("%s\n", tb[i].text);
+        }
+    }
+}
+
+void FontSet(ecs_iter_t *it) {
+    Font *font = ecs_field(it, Font, 1);
+    for (int i = 0; i < it->count; i++) {
+        printf("TTF_OpenFont\n");
+        font[i].font = TTF_OpenFont("../res/ATARISTOCRAT.ttf", 16);
+        // font[i].font = TTF_OpenFont("../res/madness.ttf", 16);
+        if (font[i].font == NULL) {
+            printf("TTF_OpenFont: %s\n", TTF_GetError());
+            // handle error
+        }
+    }
+}
+
+void FontRemove(ecs_iter_t *it) {
+    Font *font = ecs_field(it, Font, 1);
+    for (int i = 0; i < it->count; i++) {
+        TTF_CloseFont(font[i].font);
+    }
+}
+
+
+void TextboxClick(ecs_iter_t* it) {
+    Textbox* tb = ecs_field(it, Textbox, 1);
+    Position* p = ecs_field(it, Position, 2);
+    Size* s = ecs_field(it, Size, 3);
+    EventMouseClick* click = ecs_field(it, EventMouseClick, 4);
+
+    for (int i = 0; i < it->count; i++) {
+        // Calculate the boundaries of the textbox
+        int tbLeft = p[i].x;
+        int tbRight = p[i].x + s[i].width;
+        int tbTop = p[i].y;
+        int tbBottom = p[i].y + s[i].height;
+
+        // Check if the click was within the boundaries of the textbox
+        if (click[i].x >= tbLeft && click[i].x <= tbRight && click[i].y >= tbTop && click[i].y <= tbBottom) {
+            // Click was within the textbox, so activate it
+            tb[i].active = 1;
+        } else {
+            // Click was outside the textbox, so deactivate it
+            tb[i].active = 0;
+        }
+    }
+}
+
+void TextboxCursorBlink(ecs_iter_t* it) {
+    Textbox* tb = ecs_field(it, Textbox, 1);
+    Cursor* cursor = ecs_field(it, Cursor, 2);
+    
+    // Get the current time in milliseconds
+    Uint32 currentTime = SDL_GetTicks();
+
+    for (int i = 0; i < it->count; i++) {
+        if (tb[i].active && currentTime - cursor[i].lastToggle > 500) { // 500ms blink interval
+            // Toggle the cursor visibility
+            cursor[i].visible = !cursor[i].visible;
+            
+            // Update the last toggle time
+            cursor[i].lastToggle = currentTime;
+        }
+    }
+}
+
+
 void ConsumeEvents(ecs_iter_t* it)
 {
     ecs_entity_t pair = ecs_field_id(it, 1);
@@ -173,6 +301,39 @@ void ConsumeEvents(ecs_iter_t* it)
         ecs_remove_id(it->world, it->entities[i], pair);
     }
 }
+
+void RenderText(ecs_iter_t *it) {
+    Transform *t = ecs_field(it, Transform, 1);
+    Text *text = ecs_field(it, Text, 2);
+    Font *font = ecs_field(it, Font, 3);
+
+    // printf("RENDER TEXT\n");
+    for (int i = 0; i < it->count; i++) {
+        if (text[i].changed) {
+            // Free old surface and texture if they exist
+            if (text[i].surface) {
+                SDL_FreeSurface(text[i].surface);
+            }
+            if (text[i].texture) {
+                SDL_DestroyTexture(text[i].texture);
+            }
+
+            // Create new surface and texture
+            text[i].surface = TTF_RenderText_Solid(font->font, text[i].str, (SDL_Color){255, 255, 255, 255});
+            text[i].texture = SDL_CreateTextureFromSurface(renderer, text[i].surface);
+            text[i].changed = 0;  // Mark text as unchanged
+        }
+
+        SDL_Rect dst;
+        dst.x = (int)t[i].x;
+        dst.y = (int)t[i].y;
+        SDL_QueryTexture(text[i].texture, NULL, NULL, &dst.w, &dst.h);  // Get the width and height from the texture
+        printf("%d, %d\n", dst.w, dst.h);
+        SDL_RenderCopy(renderer, text[i].texture, NULL, &dst);
+    }
+}
+
+
 
 bool hasNamedAncestor(ase_layer_t* layer, const char* name) {
     // Base case: if there's no parent, return false
@@ -325,6 +486,13 @@ int main(int argc, char *argv[]) {
     ECS_COMPONENT_DEFINE(world, Stats);
     ECS_COMPONENT_DEFINE(world, ConsumeEvent);
     ECS_COMPONENT_DEFINE(world, EventMouseMotion);
+    ECS_COMPONENT_DEFINE(world, Textbox);
+    ECS_COMPONENT_DEFINE(world, EventTextInput);
+    ECS_COMPONENT_DEFINE(world, Position);
+    ECS_COMPONENT_DEFINE(world, Size);
+    ECS_COMPONENT_DEFINE(world, Cursor);
+    ECS_COMPONENT_DEFINE(world, Font);
+    ECS_COMPONENT_DEFINE(world, Text);
 
    ase_t* ase = cute_aseprite_load_from_file("table.ase", NULL);
 
@@ -343,16 +511,37 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
+    if (TTF_Init() == -1) {
+        printf("TTF_Init: %s\n", TTF_GetError());
+        exit(2);
+    }
+
+    ECS_OBSERVER(world, FontSet, EcsOnAdd, Font);
+    ECS_OBSERVER(world, FontRemove, EcsOnRemove, Font);
+
+    ecs_entity_t resource = ecs_set_name(world, 0, "resource");
+    ecs_add(world, resource, Font);
+
+    ecs_entity_t test = ecs_new(world, 0);
+    ecs_set(world, test, Transform, {0, 0, 64, 64});
+    // ecs_set(world, test, Text, {"Hello, GPT-4", NULL, NULL, 1}); // TODO: OBSERVER construction
+    ecs_set(world, test, Text, {"Bulwark", NULL, NULL, 1}); // TODO: OBSERVER construction
+
     parseAsepriteFile(ase, world, renderer);
+
+    ecs_entity_t tb = ecs_new(world, 0);
+    ecs_add(world, tb, Textbox);
 
     ECS_SYSTEM(world, MouseMovableSelection, EcsPostUpdate, Movable(parent), Transform(parent), Transform, Sprite, EventMouseClick(input));
     ECS_SYSTEM(world, MouseMoveGrabbed, EcsPostUpdate, Movable, Transform, EventMouseMotion(input));
-    // ECS_OBSERVER(world, MouseMove, EcsOnSet, EventMouseMotion(input));
     ECS_SYSTEM(world, Input, EcsPreUpdate, [inout] *());
     ECS_SYSTEM(world, Render, EcsPostFrame, Transform, Sprite);
     ECS_SYSTEM(world, ConsumeEvents, EcsPostFrame, (ConsumeEvent, *));
     ECS_SYSTEM(world, TransformCascadeHierarchy, EcsPreFrame, ?Transform(parent|cascade), Transform);
-    
+    ECS_SYSTEM(world, TextboxEntry, EcsOnUpdate, Textbox, EventTextInput(input));
+    ECS_SYSTEM(world, TextboxClick, EcsOnUpdate, Textbox, Position, Size, EventMouseClick(input));
+    ECS_SYSTEM(world, TextboxCursorBlink, EcsOnUpdate, Textbox, Cursor);
+    ECS_SYSTEM(world, RenderText, EcsPostFrame, Transform, Text, Font(resource));
 
     while (ecs_progress(world, 0)) {
         SDL_RenderPresent(renderer);

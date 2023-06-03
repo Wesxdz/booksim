@@ -6,21 +6,23 @@ set(SOURCES main.c)
 
 # Add the executable target
 add_executable(agent ${SOURCES})
-include_directories("include")
-set(CMAKE_BUILD_TYPE Debug)
+include_directories("include" "SDL2_ttf-2.20.2")
+set(CMAKE_BUILD_TYPE Release)
 
 # Add the subdirectory for flecs
 add_subdirectory(flecs)
+add_subdirectory(SDL2-2.0.20)
+add_subdirectory(SDL2_ttf-2.20.2)
 
 # Include FetchContent module
-include(FetchContent)
+# include(FetchContent)
 
 # Tell FetchContent to fetch SDL2
-FetchContent_Declare(
-  SDL2
-  URL https://www.libsdl.org/release/SDL2-2.0.16.tar.gz  # replace with the URL to the version you're using
-)
-FetchContent_MakeAvailable(SDL2)
+# FetchContent_Declare(
+#   SDL2
+#   URL https://www.libsdl.org/release/SDL2-2.20.2.tar.gz  # replace with the URL to the version you're using
+# )
+# FetchContent_MakeAvailable(SDL2)
 
 # Link the flecs library and SDL2 to the executable
-target_link_libraries(agent flecs SDL2::SDL2 ${CMAKE_DL_LIBS} m)
+target_link_libraries(agent flecs SDL2::SDL2 SDL2_ttf ${CMAKE_DL_LIBS} m)

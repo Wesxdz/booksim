@@ -3,4 +3,5 @@ ui-idm/
 runsc.sha512
 team/work
 game/build
-game/SDL2-2.26.5
+game/SDL2-2.0.20
+game/SDL2_ttf-2.20.2

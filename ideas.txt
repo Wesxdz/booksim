@@ -1,7 +1,7 @@
 Early Action/Quest Ideas
 What is dichotomy between actions and quests? Quests->drive action competency/practice
 
-Computing Taks that people frequently do
+Computing Tasks that people frequently do
 Create/Rename/Delete File/Directory
 User Interface Navigation (ie 'click mouse') Should agents have a desktop environment? Why not lol, they should probably develop their own
 Searching for File (by direct search/embedding) honestly most file browsers have bad file search, might be setting the agents up for failure I can't even find my own files half the time
@@ -17,3 +17,10 @@ What can't it do in terms of reading books at human level?
 https://psychonautwiki.org/wiki/Subjective_effect_index
 For example LLMs feel no pain, have unknown consciousness, can they experience subjective effects?
 Hypothesis: Reading
+
+
+
+Automate coding
+Lookup documentation (recursively summarizing)
+Write simple example as a unit test proof
+Once proof is verified, integrate
