@@ -5,3 +5,5 @@ team/work
 game/build
 game/SDL2-2.0.20
 game/SDL2_ttf-2.20.2
+game/flecs-3.2.3/
+*.vscode

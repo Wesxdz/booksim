@@ -3,108 +3,124 @@
 #include <SDL_ttf.h>
 #define CUTE_ASEPRITE_IMPLEMENTATION
 #include "cute_aseprite.h"
+#include <string.h>
 
 ecs_entity_t input;
 
+ECS_STRUCT(Test, {
+    float x;
+});
 
-typedef struct Transform {
-    float x, y;
-    float r_x, r_y;
-} Transform;
-ECS_COMPONENT_DECLARE(Transform);
+ECS_STRUCT(Transform, {
+    float x;
+    float y;
+    float r_x;
+    float r_y;
+});
 
-typedef struct Position {
-    int x, y;
-} Position;
-ECS_COMPONENT_DECLARE(Position);
+ECS_STRUCT(Position, {
+    int32_t x;
+    int32_t y;
+});
 
-typedef struct Size {
-    int width, height;
-} Size;
-ECS_COMPONENT_DECLARE(Size);
+ECS_STRUCT(Size, {
+    int32_t width;
+    int32_t height;
+});
 
+typedef struct TestNormal {
+    float value;
+} TestNormal;
+ECS_COMPONENT_DECLARE(TestNormal);
+
+
+// ECS_STRUCT(Sprite, {
+//     SDL_Texture* texture;
+//     int32_t width;
+//     int32_t height;
+//     bool visible;
+// });
 
 typedef struct Sprite {
     SDL_Texture* texture;
-    int width;
-    int height;
+    int32_t width;
+    int32_t height;
     bool visible;
 } Sprite;
 ECS_COMPONENT_DECLARE(Sprite);
 
-typedef struct Movable {
+ECS_STRUCT(Movable, {
     bool is_grabbed;
     float offset_x; // Offset between mouse cursor and sprite's top-left corner
     float offset_y;
-} Movable;
-ECS_COMPONENT_DECLARE(Movable);
+});
 
-typedef struct Layer {
+ECS_STRUCT(Layer, {
     ecs_id_t parent;
     bool visible;
-} Layer;
+});
 
-typedef struct Agent {
-    char* name;
-} Agent;
-ECS_COMPONENT_DECLARE(Agent);
+// ECS_STRUCT(Agent, {
+//     char* name;
+// });
 
-typedef struct Stats {
-    int read;
-    int lut;
-} Stats;
-ECS_COMPONENT_DECLARE(Stats);
+ECS_STRUCT(Stats, {
+    int32_t read;
+    int32_t lut;
+});
 
-typedef struct EventMouseMotion {
-    int x, y;
-} EventMouseMotion;
-ECS_COMPONENT_DECLARE(EventMouseMotion);
+ECS_STRUCT(EventMouseMotion, {
+    int32_t x;
+    int32_t y;
+});
 
-typedef struct EventMouseClick {
-    int x, y;
-    Uint8 button; // 1: left, 2: middle, 3: right, etc.
-    Uint8 state;
-} EventMouseClick;
-ECS_COMPONENT_DECLARE(EventMouseClick);
+ECS_STRUCT(EventMouseClick, {
+    int32_t x;
+    int32_t y;
+    uint8_t button; // 1: left, 2: middle, 3: right, etc.
+    uint8_t state;
+});
 
-typedef struct EventTextInput {
+ECS_STRUCT(EventTextInput, {
     char text[33]; // 32 characters + null-terminating character
-} EventTextInput;
-ECS_COMPONENT_DECLARE(EventTextInput);
+});
 
-typedef struct Cursor {
-    Uint32 lastToggle;
-    Uint8 visible;
-} Cursor;
-ECS_COMPONENT_DECLARE(Cursor);
+// ECS_STRUCT(EventKeyInput, {
+//     SDL_Keycode keycode;
+// });
 
-typedef struct ConsumeEvent {
+typedef struct EventKeyInput  {
+    SDL_Keycode keycode;
+} EventKeyInput;
+ECS_COMPONENT_DECLARE(EventKeyInput);
+
+
+ECS_STRUCT(Cursor, {
+    uint32_t lastToggle;
+    bool visible;
+});
+
+ECS_STRUCT(ConsumeEvent, {
     bool mock;
-} ConsumeEvent;
-ECS_COMPONENT_DECLARE(ConsumeEvent);
+});
 
-typedef struct Text {
+ECS_STRUCT(Text, {
     char str[256];
     SDL_Surface *surface;
     SDL_Texture *texture;
-    int changed;
-} Text;
-ECS_COMPONENT_DECLARE(Text);
+    int32_t changed;
+});
 
 
-typedef struct Textbox {
-    char text[256];
-    int cursorPosition;
-    int active;
-} Textbox;
-ECS_COMPONENT_DECLARE(Textbox);
+ECS_STRUCT(Textbox, {
+    int32_t cursorPosition;
+    int32_t active;
+});
 
 typedef struct Font {
     TTF_Font* font;
 } Font;
 ECS_COMPONENT_DECLARE(Font);
-
-
 
 SDL_Window* window = NULL;
 SDL_Renderer* renderer = NULL;
@@ -128,8 +144,13 @@ void Input(ecs_iter_t *it) {
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_QUIT) {
             ecs_quit(it->world);
-        } else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) {
-            ecs_quit(it->world);
+        }
+        else if (e.type == SDL_KEYDOWN) {
+            if (e.key.keysym.sym == SDLK_ESCAPE) {
+                ecs_quit(it->world);
+            }
+            ecs_set(it->world, input, EventKeyInput, {e.key.keysym.sym});
+            ecs_set_pair(it->world, input, ConsumeEvent, ecs_id(EventKeyInput), {});
         } else if (e.type == SDL_MOUSEMOTION) {
             ecs_set(it->world, input, EventMouseMotion, {e.motion.x, e.motion.y});
             ecs_set_pair(it->world, input, ConsumeEvent, ecs_id(EventMouseMotion), {});
@@ -137,7 +158,11 @@ void Input(ecs_iter_t *it) {
             ecs_set(it->world, input, EventMouseClick, {e.button.x, e.button.y, e.button.button, e.button.state});
             ecs_set_pair(it->world, input, ConsumeEvent, ecs_id(EventMouseClick), {});
         }  else if (e.type == SDL_TEXTINPUT) {
-            ecs_set(it->world, input, EventTextInput, {e.text.text});
+            // printf("%s\n", e.text.text);
+            ecs_set(it->world, input, EventTextInput, {""});
+            EventTextInput* text_input = ecs_get_mut(it->world, input, EventTextInput);
+            memset(text_input->text, 0, sizeof(text_input->text));
+            strcat(text_input->text, e.text.text);
             ecs_set_pair(it->world, input, ConsumeEvent, ecs_id(EventTextInput), {});
         }
     }
@@ -214,15 +239,35 @@ void MouseMoveGrabbed(ecs_iter_t *it) {
 
 void TextboxEntry(ecs_iter_t* it) {
     Textbox* tb = ecs_field(it, Textbox, 1);
-    EventTextInput* input = ecs_field(it, EventTextInput, 2);
-    
+    Text* txt = ecs_field(it, Text, 2);
+    EventTextInput* input = ecs_field(it, EventTextInput, 3);
     for (int i = 0; i < it->count; i++) {
         // Check if the textbox is active
         if (tb[i].active) {
             // Append the input text to the textbox's text, but ensure that you do not exceed the textbox's max length
-            // Note: This simplistic approach does not handle UTF-8 encoded text correctly.
-            strncat(tb[i].text, input[i].text, 256 - strlen(tb[i].text));
-            printf("%s\n", tb[i].text);
+            int available_space = 255 - strlen(txt[i].str);
+            int append_length = strlen(input->text);
+            if (append_length < available_space) {
+                strcat(txt[i].str, input->text);
+            } else {
+                strncat(txt[i].str, input->text, available_space);
+                txt[i].str[255] = '\0';  // Ensure null termination
+            }
+            printf("%s\n", txt[i].str);
+            txt->changed = true; // TODO: Refactor to OBSERVER event for performance
+        }
+    }
+}
+
+void HandleBackspace(ecs_iter_t* it) {
+    Textbox* tb = ecs_field(it, Textbox, 1);
+    Text* txt = ecs_field(it, Text, 2);
+    EventKeyInput* key_input = ecs_field(it, EventKeyInput, 3);
+    for (int i = 0; i < it->count; i++) {
+        if (tb[i].active && key_input->keycode == SDLK_BACKSPACE && strlen(txt[i].str) > 0) {
+            txt[i].str[strlen(txt[i].str) - 1] = '\0';  // Remove the last character
+            printf("%s\n", txt[i].str);
+            txt->changed = true; // TODO: Refactor to OBSERVER event for performance
         }
     }
 }
@@ -328,7 +373,7 @@ void RenderText(ecs_iter_t *it) {
         dst.x = (int)t[i].x;
         dst.y = (int)t[i].y;
         SDL_QueryTexture(text[i].texture, NULL, NULL, &dst.w, &dst.h);  // Get the width and height from the texture
-        printf("%d, %d\n", dst.w, dst.h);
+        // printf("%d, %d\n", dst.w, dst.h);
         SDL_RenderCopy(renderer, text[i].texture, NULL, &dst);
     }
 }
@@ -474,25 +519,47 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, SDL_Renderer* renderer) {
 
 int main(int argc, char *argv[]) {
 
-
     ecs_world_t *world = ecs_init();
+    ECS_IMPORT(world, FlecsMeta);
     input = ecs_set_name(world, 0, "input");
 
-    ECS_COMPONENT_DEFINE(world, Transform);
-    ECS_COMPONENT_DEFINE(world, Sprite);
-    ECS_COMPONENT_DEFINE(world, Movable);
-    ECS_COMPONENT_DEFINE(world, EventMouseClick);
-    ECS_COMPONENT_DEFINE(world, Agent);
-    ECS_COMPONENT_DEFINE(world, Stats);
-    ECS_COMPONENT_DEFINE(world, ConsumeEvent);
-    ECS_COMPONENT_DEFINE(world, EventMouseMotion);
-    ECS_COMPONENT_DEFINE(world, Textbox);
-    ECS_COMPONENT_DEFINE(world, EventTextInput);
-    ECS_COMPONENT_DEFINE(world, Position);
-    ECS_COMPONENT_DEFINE(world, Size);
-    ECS_COMPONENT_DEFINE(world, Cursor);
+    ECS_META_COMPONENT(world, Transform);
+    ECS_META_COMPONENT(world, Movable);
+    ECS_META_COMPONENT(world, EventMouseClick);
+    ECS_META_COMPONENT(world, Stats);
+    ECS_META_COMPONENT(world, ConsumeEvent);
+    ECS_META_COMPONENT(world, EventMouseMotion);
+    ECS_META_COMPONENT(world, Textbox);
+    ECS_META_COMPONENT(world, EventTextInput);
+    ECS_META_COMPONENT(world, Position);
+    ECS_META_COMPONENT(world, Size);
+    ECS_META_COMPONENT(world, Cursor);
+    ECS_META_COMPONENT(world, Text);
+    ECS_META_COMPONENT(world, Test);
+
+    ECS_COMPONENT_DEFINE(world, TestNormal);
     ECS_COMPONENT_DEFINE(world, Font);
-    ECS_COMPONENT_DEFINE(world, Text);
+    ECS_COMPONENT_DEFINE(world, Sprite);
+    ECS_COMPONENT_DEFINE(world, EventKeyInput);
+
+    ecs_entity_t ent = ecs_new_entity(world, "ent");
+    ecs_add(world, ent, Textbox);
+    ecs_add(world, ent, Text);
+    ecs_add(world, ent, TestNormal);
+
+    // ecs_query_t *q = ecs_query(world, {
+    //     .filter.terms = {
+    //         { .id = ecs_id(TestNormal), .inout = EcsIn }
+    //     }
+    // });
+
+    // Do the transform
+    // ecs_iter_t it = ecs_query_iter(world, q);
+    // while (ecs_query_next(&it)) {
+    //     for (int i = 0; i < it.count; i++) {
+    //         printf("%s\n", ecs_get_name(world, it.entities[i]));
+    //     }
+    // }
 
    ase_t* ase = cute_aseprite_load_from_file("table.ase", NULL);
 
@@ -524,13 +591,42 @@ int main(int argc, char *argv[]) {
 
     ecs_entity_t test = ecs_new(world, 0);
     ecs_set(world, test, Transform, {0, 0, 64, 64});
-    // ecs_set(world, test, Text, {"Hello, GPT-4", NULL, NULL, 1}); // TODO: OBSERVER construction
     ecs_set(world, test, Text, {"Bulwark", NULL, NULL, 1}); // TODO: OBSERVER construction
+    ecs_set(world, test, Textbox, {0, true});
 
     parseAsepriteFile(ase, world, renderer);
 
     ecs_entity_t tb = ecs_new(world, 0);
     ecs_add(world, tb, Textbox);
+
+
+    ecs_query_t *q_meta = ecs_query(world, {
+        .filter.terms = {
+            { .id = ecs_id(Transform), .inout = EcsIn },
+            {
+                .id = ecs_id(Transform), 
+                .inout = EcsIn,
+                // Get from the parent, in breadth-first order (cascade)
+                .src.flags = EcsParent | EcsCascade,
+                // Make parent term optional so we also match the root (sun)
+                .oper = EcsOptional
+            }
+        }
+    });
+
+    // Do the transform
+    ecs_iter_t it = ecs_query_iter(world, q_meta);
+    while (ecs_query_next(&it)) {
+        for (int i = 0; i < it.count; i++) {
+            // printf("%s\n", ecs_get_name(world, it.entities[i]));
+            char* str = ecs_entity_to_json(world, it.entities[i], &(ecs_entity_to_json_desc_t) {
+                .serialize_path = true,
+                .serialize_values = true
+            });
+            printf("ent = %s\n", str);
+            ecs_os_free(str);
+        }
+    }
 
     ECS_SYSTEM(world, MouseMovableSelection, EcsPostUpdate, Movable(parent), Transform(parent), Transform, Sprite, EventMouseClick(input));
     ECS_SYSTEM(world, MouseMoveGrabbed, EcsPostUpdate, Movable, Transform, EventMouseMotion(input));
@@ -538,7 +634,8 @@ int main(int argc, char *argv[]) {
     ECS_SYSTEM(world, Render, EcsPostFrame, Transform, Sprite);
     ECS_SYSTEM(world, ConsumeEvents, EcsPostFrame, (ConsumeEvent, *));
     ECS_SYSTEM(world, TransformCascadeHierarchy, EcsPreFrame, ?Transform(parent|cascade), Transform);
-    ECS_SYSTEM(world, TextboxEntry, EcsOnUpdate, Textbox, EventTextInput(input));
+    ECS_SYSTEM(world, TextboxEntry, EcsOnUpdate, Textbox, Text, EventTextInput(input));
+    ECS_SYSTEM(world, HandleBackspace, EcsOnUpdate, Textbox, Text, EventKeyInput(input));
     ECS_SYSTEM(world, TextboxClick, EcsOnUpdate, Textbox, Position, Size, EventMouseClick(input));
     ECS_SYSTEM(world, TextboxCursorBlink, EcsOnUpdate, Textbox, Cursor);
     ECS_SYSTEM(world, RenderText, EcsPostFrame, Transform, Text, Font(resource));
