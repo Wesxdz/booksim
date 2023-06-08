@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 project(agent_loop)
 
 # Add the main executable sources
-set(SOURCES main.c)
+set(SOURCES main.c log.c)
 
 # Add the executable target
 add_executable(agent ${SOURCES})

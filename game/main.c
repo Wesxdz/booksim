@@ -4,12 +4,15 @@
 #define CUTE_ASEPRITE_IMPLEMENTATION
 #include "cute_aseprite.h"
 #include <string.h>
+#include "log.h"
 
 ecs_entity_t input;
 
 ECS_STRUCT(Test, {
     float x;
 });
+
+ECS_TAG_DECLARE(SceneGraph);
 
 ECS_STRUCT(Transform, {
     float x;
@@ -253,7 +256,7 @@ void TextboxEntry(ecs_iter_t* it) {
                 strncat(txt[i].str, input->text, available_space);
                 txt[i].str[255] = '\0';  // Ensure null termination
             }
-            printf("%s\n", txt[i].str);
+            // printf("%s\n", txt[i].str);
             txt->changed = true; // TODO: Refactor to OBSERVER event for performance
         }
     }
@@ -266,7 +269,7 @@ void HandleBackspace(ecs_iter_t* it) {
     for (int i = 0; i < it->count; i++) {
         if (tb[i].active && key_input->keycode == SDLK_BACKSPACE && strlen(txt[i].str) > 0) {
             txt[i].str[strlen(txt[i].str) - 1] = '\0';  // Remove the last character
-            printf("%s\n", txt[i].str);
+            // printf("%s\n", txt[i].str);
             txt->changed = true; // TODO: Refactor to OBSERVER event for performance
         }
     }
@@ -425,11 +428,23 @@ void makeAgent(const char* name, ecs_world_t* world, ecs_entity_t e)
     // Set specific Agent attributes
     // ecs_set(world, ai, Agent, {"agent"});
     ecs_set(world, ai, Stats, {0, 0});
-    printf("Add child of\n");
     ecs_add_pair(world, e, EcsChildOf, ai);
+    ecs_entity_t agents = ecs_lookup(world, "agents");
+    if (ecs_is_valid(world, agents))
+    {
+        ecs_add_pair(world, ai, EcsChildOf, agents);
+    }
 }
 
-void parseAsepriteFile(ase_t* ase, ecs_world_t* world, SDL_Renderer* renderer) {
+void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, SDL_Renderer* renderer) {
+
+    ecs_entity_t children[CUTE_ASEPRITE_MAX_LAYERS];
+    memset(children, 0, sizeof(children));
+    ecs_entity_t parents[CUTE_ASEPRITE_MAX_LAYERS];
+    memset(parents, 0, sizeof(parents));
+    bool valid[CUTE_ASEPRITE_MAX_LAYERS];
+    memset(valid, false, sizeof(valid));
+
     for (int f = 0; f < ase->frame_count; ++f) {
         ase_frame_t* frame = ase->frames + f;
         // First, we'll add all the group layers
@@ -438,27 +453,63 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, SDL_Renderer* renderer) {
             ase_layer_t* layer = ase->layers + i;
             if (layer->type == ASE_LAYER_TYPE_GROUP)
             {
-                ecs_entity_t e = ecs_set_name(world, 0, layer->name);
-                ecs_set(world, e, Transform, {0, 0, 0, 0});
-                if (hasNamedParent(layer, "agents")) {
-                    makeAgent(layer->name, world, e);
+                if (layer->parent)
+                {
+                    log_trace("LAYER %s PARENT %s\n", layer->name, layer->parent->name);
+                } else
+                {
+                    log_trace("LAYER %s\n", layer->name);
                 }
             }
         }
 
+        for (int i = 0; i < ase->layer_count; ++i) 
+        {
+            ase_layer_t* layer = ase->layers + i;
+            if (layer->type == ASE_LAYER_TYPE_GROUP)
+            {
+                // char* copy;
+                // copy = (char*)malloc((strlen(layer->name) + 1) * sizeof(char));
+                // strcpy(copy, layer->name);
+                ecs_entity_t e = ecs_set_name(world, 0, layer->name);
+                ecs_set(world, e, Transform, {0, 0, 0, 0});
+                
+                if (layer->parent)
+                {
+                    log_trace("CREATE GROUP: %s (parent layer):%s\n", layer->name, layer->parent->name);
+                } else {
+                    log_trace("CREATE GROUP: %s NO PARENT LAYER\n", layer->name);
+                }
+                if (hasNamedParent(layer, "agents")) {
+                    // TODO: This messes up layers parenting too unfortunately....
+                    // makeAgent(layer->name, world, e);
+                }
+            }
+        }
+
+        // TODO: Layer parents are correct until group hierarchy is created
+        // WHY???
         // Hierarchy the group layers
+
         for (int i = 0; i < ase->layer_count; ++i) 
         {
             ase_layer_t* layer = ase->layers + i;
             if (layer && layer->type == ASE_LAYER_TYPE_GROUP)
             {
+                if (layer->parent)
+                {
+                    log_trace("Layer %s has parent %s\n", layer->name, layer->parent->name);
+                }
                 ecs_entity_t e = ecs_lookup(world, layer->name);
+                children[i] = e;
                 if (ecs_is_valid(world, e) && ecs_is_alive(world, e) && layer->parent) {
                     ecs_entity_t parent_entity = ecs_lookup(world, layer->parent->name);
                     if (ecs_is_valid(world, parent_entity) && ecs_is_alive(world, parent_entity)) 
                     {
                         // TODO: Hierarchy groups causes sprites in subfolders to not render if not done last??
-                        printf("%s child of %s\n", ecs_get_name(world, e),ecs_get_name(world, parent_entity));
+                        log_trace("GROUP HIERARCHY: %s child of %s\n", ecs_get_name(world, e),ecs_get_name(world, parent_entity));
+                        parents[i] = parent_entity;
+                        valid[i] = true;
                         // ecs_add_pair(world, e, EcsChildOf, parent_entity);
                     }
                 }
@@ -466,19 +517,34 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, SDL_Renderer* renderer) {
         }
 
         // Add and hierarchy sprites :)
+        int c = 0;
         for (int i = 0; i < ase->layer_count; ++i) 
         {
-            ase_cel_t* cel = frame->cels + i;
-            if (cel && cel->layer)
+            ase_layer_t* layer = ase->layers + i;
+            ase_cel_t* cel = frame->cels + c;
+            bool new_cel = false;
+            if (layer->type != ASE_LAYER_TYPE_GROUP)
             {
-                ecs_entity_t e = ecs_set_name(world, 0, cel->layer->name);
-                // printf("Cel has layer %s\n", cel->layer->name);
+                c++;
+                new_cel = true;
+                // current_parent = layer;
+            }
+            log_trace("CEL %s vs LAYER %s\n", cel->layer->name, layer->name);
+            char entityName[256];
+            snprintf(entityName, sizeof(entityName), "%s_%d", cel->layer->name, i);
+            if (new_cel)
+            {
+                ecs_entity_t e = ecs_set_name(world, 0, entityName);
                 if (cel->layer->parent)
                 {
                     ecs_entity_t parent_entity = ecs_lookup(world, cel->layer->parent->name);
-                    if (parent_entity && ecs_is_alive(world, parent_entity)) 
+                    children[i] = e;
+                    if (parent_entity) 
                     {
-                        ecs_add_pair(world, e, EcsChildOf, parent_entity);
+                        log_trace("CEL LAYER: %s child of %s\n", ecs_get_name(world, e), ecs_get_name(world, parent_entity));
+                        // ecs_add_pair(world, e, EcsChildOf, parent_entity);
+                        parents[i] = parent_entity;
+                        valid[i] = true;
                     }
                 }
                 if (cel->layer->flags & ASE_LAYER_FLAGS_VISIBLE) // TODO: Check if group parent is visible
@@ -501,7 +567,7 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, SDL_Renderer* renderer) {
                     ecs_set(world, e, Sprite, {texture, cel->w, cel->h, true});
 
                     if (hasNamedParent(cel->layer, "agents")) {
-                        makeAgent(cel->layer->name, world, e);
+                        // makeAgent(cel->layer->name, world, e);
                     } else if (hasNamedAncestor(cel->layer, "agents"))
                     {
                         ecs_entity_t agent = ecs_lookup(world, strcat(cel->layer->parent, "_agent"));
@@ -512,13 +578,72 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, SDL_Renderer* renderer) {
                         // TODO: Figure out how to call systems with non-parent ancestors
                     }
                 }
-            }
+            }   
+        }
+    }
+    for (int i = CUTE_ASEPRITE_MAX_LAYERS-1; i >=0 ; i--)
+    {
+        if (valid[i])
+        {
+            log_trace("%s %s\n", ecs_get_name(world, children[i]), ecs_get_name(world, parents[i]));
+            ecs_add_pair(world, children[i], EcsChildOf, parents[i]);
+        } else if (ecs_is_valid(world, children[i]))
+        {
+            ecs_add_pair(world, children[i], EcsChildOf, sceneGraph); // root node
+            log_trace("Root node is %s\n", ecs_get_name(world, children[i]));
         }
     }
 }
 
-int main(int argc, char *argv[]) {
+int countDots(const char* str) {
+    int count = 0;
+    while (*str) {
+        if (*str == '.') {
+            count++;
+        }
+        str++;
+    }
+    return count;
+}
 
+int iter_depth_recursive(ecs_world_t* world, ecs_entity_t root, int depth, int count)
+{
+    if (depth > 0)
+    {
+        char* s = ecs_get_name(world, root);
+        ecs_entity_t ebox = ecs_new(world, 0);
+        ecs_set(world, ebox, Text, {"", NULL, NULL, 1});
+        char* path = ecs_get_fullpath(world, root);
+        ecs_set(world, ebox, Transform, {0.0f, 0.0f, depth*8.0f, count*8.0f});
+        ecs_add(world, ebox, SceneGraph);
+        // log_trace("%s\n", path);
+        Text* text = ecs_get_mut(world, ebox, Text);
+        memset(text->str, 0, sizeof(text->str));
+        strcat(text->str, s);
+        ecs_os_free(path);
+        // printf("%s\n", ecs_get_name(it.world, it.entities[i]));
+        char* str = ecs_entity_to_json(world, root, &(ecs_entity_to_json_desc_t) {
+            .serialize_path = true,
+            .serialize_values = true
+        });
+        log_trace("ent = %s\n", str);
+        ecs_os_free(str);
+    }
+    ecs_iter_t it = ecs_children(world, root);
+    depth++;
+    while (ecs_children_next(&it)) {
+        for (int i = 0; i < it.count; i++)
+        {
+            ecs_entity_t child = it.entities[i];
+            count += 1;
+            count = iter_depth_recursive(world, child, depth, count);
+        }
+    }
+    return count;
+}
+
+int main(int argc, char *argv[]) {
+    log_set_quiet(true);
     ecs_world_t *world = ecs_init();
     ECS_IMPORT(world, FlecsMeta);
     input = ecs_set_name(world, 0, "input");
@@ -542,24 +667,15 @@ int main(int argc, char *argv[]) {
     ECS_COMPONENT_DEFINE(world, Sprite);
     ECS_COMPONENT_DEFINE(world, EventKeyInput);
 
+    ECS_TAG_DEFINE(world, SceneGraph);
+
     ecs_entity_t ent = ecs_new_entity(world, "ent");
     ecs_add(world, ent, Textbox);
     ecs_add(world, ent, Text);
     ecs_add(world, ent, TestNormal);
 
-    // ecs_query_t *q = ecs_query(world, {
-    //     .filter.terms = {
-    //         { .id = ecs_id(TestNormal), .inout = EcsIn }
-    //     }
-    // });
-
-    // Do the transform
-    // ecs_iter_t it = ecs_query_iter(world, q);
-    // while (ecs_query_next(&it)) {
-    //     for (int i = 0; i < it.count; i++) {
-    //         printf("%s\n", ecs_get_name(world, it.entities[i]));
-    //     }
-    // }
+    ecs_entity_t sceneGraph = ecs_new_entity(world, "scene_graph_interface");
+    ecs_add(world, sceneGraph, SceneGraph);
 
    ase_t* ase = cute_aseprite_load_from_file("table.ase", NULL);
 
@@ -589,44 +705,60 @@ int main(int argc, char *argv[]) {
     ecs_entity_t resource = ecs_set_name(world, 0, "resource");
     ecs_add(world, resource, Font);
 
-    ecs_entity_t test = ecs_new(world, 0);
-    ecs_set(world, test, Transform, {0, 0, 64, 64});
-    ecs_set(world, test, Text, {"Bulwark", NULL, NULL, 1}); // TODO: OBSERVER construction
-    ecs_set(world, test, Textbox, {0, true});
+    // ecs_entity_t test = ecs_new(world, 0);
+    // ecs_set(world, test, Transform, {0, 0, 64, 64});
+    // ecs_set(world, test, Text, {"Bulwark", NULL, NULL, 1}); // TODO: OBSERVER construction
+    // ecs_set(world, test, Textbox, {0, true});
 
-    parseAsepriteFile(ase, world, renderer);
+    parseAsepriteFile(ase, world, sceneGraph, renderer);
 
     ecs_entity_t tb = ecs_new(world, 0);
     ecs_add(world, tb, Textbox);
 
-
-    ecs_query_t *q_meta = ecs_query(world, {
+    ecs_query_t *q = ecs_query(world, {
         .filter.terms = {
-            { .id = ecs_id(Transform), .inout = EcsIn },
-            {
-                .id = ecs_id(Transform), 
-                .inout = EcsIn,
-                // Get from the parent, in breadth-first order (cascade)
-                .src.flags = EcsParent | EcsCascade,
-                // Make parent term optional so we also match the root (sun)
-                .oper = EcsOptional
-            }
+            { .id = ecs_id(Transform), .inout = EcsInOut },
         }
     });
 
-    // Do the transform
-    ecs_iter_t it = ecs_query_iter(world, q_meta);
-    while (ecs_query_next(&it)) {
-        for (int i = 0; i < it.count; i++) {
-            // printf("%s\n", ecs_get_name(world, it.entities[i]));
-            char* str = ecs_entity_to_json(world, it.entities[i], &(ecs_entity_to_json_desc_t) {
-                .serialize_path = true,
-                .serialize_values = true
-            });
-            printf("ent = %s\n", str);
-            ecs_os_free(str);
-        }
+    FILE* file = fopen("log.txt", "w");
+    if (file == NULL) {
+        printf("Failed to open log file.\n");
+        return 1;
     }
+    log_add_fp(file, 0);
+    // Do the transform
+    ecs_iter_t it = ecs_query_iter(world, q);
+    // float n = 0;
+
+    // while (ecs_query_next(&it)) {
+    //     for (int i = 0; i < it.count; i++) {
+    //         char* s = ecs_get_name(world, it.entities[i]);
+    //         if (s)
+    //         {
+    //             ecs_entity_t ebox = ecs_new(it.world, 0);
+    //             ecs_set(it.world, ebox, Text, {"", NULL, NULL, 1});
+    //             char* path = ecs_get_fullpath(it.world, it.entities[i]);
+    //             ecs_set(it.world, ebox, Transform, {0.0f, 0.0f, ((float)countDots(path))*8.0f, ((float)n)*8.0f});
+    //             ecs_add(it.world, ebox, SceneGraph);
+    //             log_trace("%s %.1f %.1f\n", s, n, countDots(path));
+    //             // log_trace("%s\n", path);
+    //             Text* text = ecs_get_mut(it.world, ebox, Text);
+    //             memset(text->str, 0, sizeof(text->str));
+    //             strcat(text->str, s);
+    //             ecs_os_free(path);
+    //             // printf("%s\n", ecs_get_name(it.world, it.entities[i]));
+    //             char* str = ecs_entity_to_json(it.world, it.entities[i], &(ecs_entity_to_json_desc_t) {
+    //                 .serialize_path = true,
+    //                 .serialize_values = true
+    //             });
+    //             log_trace("ent = %s\n", str);
+    //             ecs_os_free(str);
+    //         }
+    //         n += 1.0f;
+    //     }
+    // }
+    iter_depth_recursive(world, sceneGraph, 0, 0);
 
     ECS_SYSTEM(world, MouseMovableSelection, EcsPostUpdate, Movable(parent), Transform(parent), Transform, Sprite, EventMouseClick(input));
     ECS_SYSTEM(world, MouseMoveGrabbed, EcsPostUpdate, Movable, Transform, EventMouseMotion(input));
