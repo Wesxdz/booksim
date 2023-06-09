@@ -14,13 +14,18 @@ ECS_STRUCT(Test, {
 
 ECS_STRUCT(SceneGraph,
 {
-    ecs_entity_t prev;
+    ecs_entity_t prev; // TODO: These should probably be refactored to relationship pairs
     ecs_entity_t next;
-    bool visible;
-    bool expanded;
+    bool user_mark_visible;
+    bool user_mark_expanded;
+    bool is_visible;
+    bool is_expanded;
 });
 
 ECS_TAG_DECLARE(Selected);
+
+// Relationship
+ECS_TAG_DECLARE(Symbol);
 
 ECS_STRUCT(Transform, {
     float x;
@@ -28,6 +33,11 @@ ECS_STRUCT(Transform, {
     float r_x;
     float r_y;
 });
+
+// TODO: Replace transform with (Position, World)/(Position, Local) pairs!
+
+ECS_TAG_DECLARE(World);
+ECS_TAG_DECLARE(Local);
 
 ECS_STRUCT(Position, {
     int32_t x;
@@ -37,6 +47,12 @@ ECS_STRUCT(Position, {
 ECS_STRUCT(Size, {
     int32_t width;
     int32_t height;
+});
+
+// TODO: Evaluate for SceneGraph, whether to remove/recreate components or toggle render
+ECS_STRUCT(Renderable, {
+    int32_t z_index;
+    bool visible;
 });
 
 typedef struct TestNormal {
@@ -141,7 +157,7 @@ typedef struct SDL_Interface
 ECS_COMPONENT_DECLARE(SDL_Interface);
 
 void Render(ecs_iter_t *it) {
-    Transform *p = ecs_field(it, Transform, 1);
+    Position *p = ecs_field(it, Position, 1);
     Sprite *s = ecs_field(it, Sprite, 2);
     SDL_Interface* sdl = ecs_field(it, SDL_Interface, 3);
 
@@ -157,7 +173,7 @@ void Render(ecs_iter_t *it) {
 }
 
 void RenderBox(ecs_iter_t *it) {
-    Transform *p = ecs_field(it, Transform, 1);
+    Position *p = ecs_field(it, Position, 1);
     Text* t = ecs_field(it, Text, 2);
     SDL_Interface* sdl = ecs_field(it, SDL_Interface, 4);
 
@@ -194,7 +210,7 @@ void RenderBox(ecs_iter_t *it) {
 }
 
 void RenderSelectedBox(ecs_iter_t *it) {
-    Transform *p = ecs_field(it, Transform, 1);
+    Position *p = ecs_field(it, Position, 1);
     Text* t = ecs_field(it, Text, 2);
     SDL_Interface* sdl = ecs_field(it, SDL_Interface, 5);
 
@@ -220,6 +236,33 @@ void RenderSelectedBox(ecs_iter_t *it) {
     }
 
 }
+
+// void IndicateSelectedSprite(ecs_iter_t *it) {
+//     Transform *p = ecs_field(it, Transform, 1);
+//     Sprite* t = ecs_field(it, Text, 2);
+//     SDL_Interface* sdl = ecs_field(it, SDL_Interface, 5);
+
+//     for (int i = 0; i < it->count; i++) 
+//     {
+//         // create SDL_Rect for the box around the text
+//         SDL_Rect rect;
+//         rect.x = p[i].x - 2; // subtract padding from position
+//         rect.y = p[i].y + 2; // subtract padding from position
+//         if (t[i].surface)
+//         {
+//             rect.w = t[i].surface->w + 4; // add twice the padding to the width
+//             rect.h = t[i].surface->h - 1; // add twice the padding to the height
+//         } else
+//         {
+//             rect.w = 0;
+//             rect.h = 0;
+//         }
+
+//         // draw the box
+//         SDL_SetRenderDrawColor(sdl->renderer, 255, 255, 255, 255); // set color to white for the outline
+//         SDL_RenderDrawRect(sdl->renderer, &rect);
+//     }
+// }
 
 void Input(ecs_iter_t *it) {
     SDL_Event e;
@@ -251,31 +294,62 @@ void Input(ecs_iter_t *it) {
 }
 
 void TransformCascadeHierarchy(ecs_iter_t *it) {
-    Transform *t_parent = ecs_field(it, Transform, 1);
-    Transform *t = ecs_field(it, Transform, 2);
-    if (t_parent)
+    Position* world_pos = ecs_field(it, Position, 1);
+    const Position* local_pos = ecs_field(it, Position, 2);
+    const Position* parent_world_pos = ecs_field(it, Position, 3);
+    if (parent_world_pos)
     {
         for (int i = 0; i < it->count; i++) 
         {
-            t[i].x = t[i].r_x + t_parent->x;
-            t[i].y = t[i].r_y + t_parent->y;
+            if (local_pos)
+            {
+                world_pos[i].x = parent_world_pos->x + local_pos[i].x;
+                world_pos[i].y = parent_world_pos->y + local_pos[i].y;
+            }
+            // If there is no local position, the world_pos of the parent is not propagated
         }
     } else 
     {
         for (int i = 0; i < it->count; i++) 
         {
-
-            t[i].x = t[i].r_x;
-            t[i].y = t[i].r_y;
-            
+            if (local_pos)
+            {
+                world_pos[i].x = local_pos[i].x;
+                world_pos[i].y = local_pos[i].y;
+            }
         }
+    }
+}
+
+void SceneGraphSettingsCascadeHierarchy(ecs_iter_t *it) {
+    SceneGraph* sc_parent = ecs_field(it, SceneGraph, 1);
+    SceneGraph *sc = ecs_field(it, SceneGraph, 2);
+    Renderable* settings = ecs_field(it, Renderable, 3);
+    for (int i = 0; i < it->count; i++) 
+    {
+        if (sc_parent)
+        {
+            log_trace("%s's parent is %d expanded\n", ecs_get_name(it->world, it->entities[i]), sc_parent->is_expanded);
+            if (!sc[i].user_mark_expanded)
+            {
+                sc[i].is_expanded = false;
+            } else
+            {
+                sc[i].is_expanded = sc_parent->is_expanded;
+            }
+        } else 
+        {
+            sc[i].is_expanded = sc[i].user_mark_expanded;
+        }
+        // printf("%s is %d expanded\n", ecs_get_name(it->world, it->entities[i]), sc[i].is_expanded);
+        settings[i].visible = sc[i].is_expanded;
     }
 }
 
 void MouseMovableSelection(ecs_iter_t *it) {
     Movable *m = ecs_field(it, Movable, 1); //parent
-    Transform *t_p = ecs_field(it, Transform, 2);
-    Transform *p = ecs_field(it, Transform, 3);
+    Position *t_p = ecs_field(it, Position, 2);
+    Position *p = ecs_field(it, Position, 3);
     Sprite* s = ecs_field(it, Sprite, 4);
     EventMouseClick *click_event = ecs_field(it, EventMouseClick, 5);
 
@@ -304,15 +378,15 @@ void MouseMovableSelection(ecs_iter_t *it) {
 
 void MouseMoveGrabbed(ecs_iter_t *it) {
     Movable *m = ecs_field(it, Movable, 1);
-    Transform *p = ecs_field(it, Transform, 2);
+    Position *p = ecs_field(it, Position, 2);
     EventMouseMotion *move_event = ecs_field(it, EventMouseMotion, 3);
 
     for (int i = 0; i < it->count; i++) {
         if (m[i].is_grabbed)
         {
             // p[i].r_x += 1;
-            p[i].r_x = move_event->x - (int)m[i].offset_x; // Subtract the offset when moving the sprite
-            p[i].r_y = move_event->y - (int)m[i].offset_y;
+            p[i].x = move_event->x - (int)m[i].offset_x; // Subtract the offset when moving the sprite
+            p[i].y = move_event->y - (int)m[i].offset_y;
             // printf("(%d, %d)\n", move_event->x - (int)m[i].offset_x, move_event->y - (int)m[i].offset_y);
             // printf("(%d, %d)\n", p[i].x, p[i].y);
         }
@@ -417,6 +491,46 @@ void TextboxCursorBlink(ecs_iter_t* it) {
     }
 }
 
+void ToggleSceneGraphHierarchy(ecs_iter_t* it)
+{
+    SceneGraph* sc = ecs_field(it, SceneGraph, 1);
+    EventKeyInput* event = ecs_field(it, EventKeyInput, 3);
+    for (int32_t i = 0; i < it->count; i++)
+    {
+        bool change = false;
+        if (event->keycode == SDLK_a || event->keycode == SDLK_LEFT)
+        {
+            // Retract
+            sc[i].user_mark_expanded = false;
+            change = true;
+            // TODO: Propagate to children...
+            
+        }
+        else if (event->keycode == SDLK_d || event->keycode == SDLK_RIGHT)
+        {
+            // Expand
+            sc[i].user_mark_expanded = true;
+            change = true;
+        }
+        // TODO Is this more efficient than a cascade system and extra memory??
+        // if (change)
+        // {
+        //     printf("Toggle %s\n", ecs_get_name(it->world, it->entities[i]));
+        //     ecs_iter_t it_c = ecs_children(it->world, it->world);
+        //     while (ecs_children_next(&it_c)) {
+        //         printf("Child\n");
+        //         for (int c = 0; c < it_c.count; c++)
+        //         {
+        //             ecs_entity_t child = it_c.entities[i];
+        //             SceneGraph* csg = ecs_get_mut(it->world, child, SceneGraph);
+        //             csg->expanded = sc[i].expanded;
+        //             printf("Expand\n");
+        //         }
+        //     }
+        // }
+    }
+}
+
 
 void ConsumeEvents(ecs_iter_t* it)
 {
@@ -430,34 +544,79 @@ void ConsumeEvents(ecs_iter_t* it)
 }
 
 void RenderText(ecs_iter_t *it) {
-    Transform *t = ecs_field(it, Transform, 1);
+    Position* p = ecs_field(it, Position, 1);
     Text *text = ecs_field(it, Text, 2);
     Font *font = ecs_field(it, Font, 3);
-    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 4);
+    Renderable *settings = ecs_field(it, Renderable, 4);
+    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 5);
+
 
     // printf("RENDER TEXT\n");
     for (int i = 0; i < it->count; i++) {
-        if (text[i].changed) {
-            // Free old surface and texture if they exist
-            if (text[i].surface) {
-                SDL_FreeSurface(text[i].surface);
-            }
-            if (text[i].texture) {
-                SDL_DestroyTexture(text[i].texture);
+        if (!settings || settings[i].visible)
+        {
+            if (text[i].changed) {
+                // Free old surface and texture if they exist
+                if (text[i].surface) {
+                    SDL_FreeSurface(text[i].surface);
+                }
+                if (text[i].texture) {
+                    SDL_DestroyTexture(text[i].texture);
+                }
+
+                // Create new surface and texture
+                text[i].surface = TTF_RenderText_Solid(font->font, text[i].str, (SDL_Color){255, 255, 255, 255});
+                text[i].texture = SDL_CreateTextureFromSurface(sdl->renderer, text[i].surface);
+                text[i].changed = 0;  // Mark text as unchanged
             }
 
-            // Create new surface and texture
-            text[i].surface = TTF_RenderText_Solid(font->font, text[i].str, (SDL_Color){255, 255, 255, 255});
-            text[i].texture = SDL_CreateTextureFromSurface(sdl->renderer, text[i].surface);
-            text[i].changed = 0;  // Mark text as unchanged
+            SDL_Rect dst;
+            dst.x = (int)p[i].x;
+            dst.y = (int)p[i].y;
+            SDL_QueryTexture(text[i].texture, NULL, NULL, &dst.w, &dst.h);  // Get the width and height from the texture
+            // printf("%d, %d\n", dst.w, dst.h);
+            SDL_RenderCopy(sdl->renderer, text[i].texture, NULL, &dst);
         }
+    }
+}
 
-        SDL_Rect dst;
-        dst.x = (int)t[i].x;
-        dst.y = (int)t[i].y;
-        SDL_QueryTexture(text[i].texture, NULL, NULL, &dst.w, &dst.h);  // Get the width and height from the texture
-        // printf("%d, %d\n", dst.w, dst.h);
-        SDL_RenderCopy(sdl->renderer, text[i].texture, NULL, &dst);
+void KeyNavSceneGraph(ecs_iter_t* it)
+{
+    SceneGraph* sc = ecs_field(it, SceneGraph, 1);
+    EventKeyInput* event = ecs_field(it, EventKeyInput, 3);
+
+    // for (int i = 0; i < it->count; i++) {
+    //     char* name = ecs_get_name(it->world, it->entities[i]);
+    //     if (name)
+    //     {
+    //         printf("%s\n", name);
+    //     }
+    // }
+    if (event->keycode == SDLK_DOWN || event->keycode == SDLK_s)
+    {
+        // SceneGraph* nextNode = ecs_get(it.world, sc->next, SceneGraph);
+        for (int i = 0; i < it->count; i ++) {
+            if (ecs_is_valid(it->world, sc[i].next))
+            {
+                ecs_remove(it->world, it->entities[i], Selected);
+                ecs_add(it->world, sc[i].next, Selected);
+            } else
+            {
+                printf("%s next is not valid\n", ecs_get_name(it->world, it->entities[i]));
+            }
+        }
+    } else if (event->keycode == SDLK_UP || event->keycode == SDLK_w)
+    {
+        for (int i = 0; i < it->count; i ++) {
+            if (ecs_is_valid(it->world, sc[i].prev))
+            {
+                ecs_remove(it->world, it->entities[i], Selected);
+                ecs_add(it->world, sc[i].prev, Selected);
+            } else
+            {
+                printf("%s next is not valid\n", ecs_get_name(it->world, it->entities[i]));
+            }
+        }
     }
 }
 
@@ -511,7 +670,7 @@ void makeAgent(const char* name, ecs_world_t* world, ecs_entity_t e)
     // ecs_entity_t ai = ecs_new_w_pair(world, EcsIsA, prefab);
     ecs_entity_t ai = ecs_set_name(world, 0, strcat(name, "_agent"));
     // TODO: If the layer has a parent
-    ecs_add(world, ai, Transform);
+    ecs_add(world, ai, Position);
     ecs_set(world, ai, Movable, {false});
     // Set specific Agent attributes
     // ecs_set(world, ai, Agent, {"agent"});
@@ -560,7 +719,7 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, 
                 // copy = (char*)malloc((strlen(layer->name) + 1) * sizeof(char));
                 // strcpy(copy, layer->name);
                 ecs_entity_t e = ecs_set_name(world, 0, layer->name);
-                ecs_set(world, e, Transform, {0, 0, 0, 0});
+                ecs_set_pair(world, e, Position, World, {0, 0});
                 
                 if (layer->parent)
                 {
@@ -638,7 +797,10 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, 
                 }
                 if (cel->layer->flags & ASE_LAYER_FLAGS_VISIBLE) // TODO: Check if group parent is visible
                 {
-                    ecs_set(world, e, Transform, {0, 0, cel->x, cel->y});
+                    // ecs_set(world, e, Transform, {0, 0, cel->x, cel->y});
+                    ecs_set_pair(world, e, Position, World, {0, 0});
+                    // ecs_set_pair(world, e, Position, World, {0, 0});
+                    ecs_set_pair(world, e, Position, Local, {cel->x, cel->y});
                     SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, cel->w, cel->h);
                     if (texture == NULL) {
                         printf("Failed to create texture: %s\n", SDL_GetError());
@@ -685,17 +847,6 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, 
     }
 }
 
-int countDots(const char* str) {
-    int count = 0;
-    while (*str) {
-        if (*str == '.') {
-            count++;
-        }
-        str++;
-    }
-    return count;
-}
-
 typedef struct {
     ecs_world_t* world;
     ecs_entity_t root;
@@ -704,26 +855,47 @@ typedef struct {
     ecs_entity_t prev;
 } lambda_parameters;
 
-void lambda_function(lambda_parameters* params) 
+
+typedef struct {
+    int count;
+    ecs_entity_t firstCreatedNode;
+    ecs_entity_t lastCreatedNode;
+} lambda_output;
+
+typedef struct {
+    ecs_entity_t* nodes;
+    ecs_entity_t* parents;
+} lambda_data;
+
+ecs_entity_t lambda_function(lambda_parameters* params) 
 {
     ecs_world_t* world = params->world;
     ecs_entity_t root = params->root;
     int depth = params->depth;
     int count = params->count;
+    ecs_entity_t prev = params->prev;
+
+    char* root_name = ecs_get_name(world, root);
+    char entityName[256];
+    snprintf(entityName, sizeof(entityName), "%s_%s", root_name, "node");
 
     if (depth > 0)
     {
         char* s = ecs_get_name(world, root);
-        ecs_entity_t ebox = ecs_new(world, 0);
+        ecs_entity_t ebox = ecs_set_name(world, 0, entityName);
+        ecs_add_pair(world, ebox, Symbol, root);
         if (count == 1)
         {
             ecs_add(world, ebox, Selected);
             printf("Selected added to %s\n", ecs_get_name(world, root));
         }
         ecs_set(world, ebox, Text, {"", NULL, NULL, 1});
+        ecs_set(world, ebox, Renderable, {0, true});
         char* path = ecs_get_fullpath(world, root);
-        ecs_set(world, ebox, Transform, {0.0f, 0.0f, depth*8.0f, count*12.0f});
-        ecs_set(world, ebox, SceneGraph, {NULL, NULL, true, true});
+        // ecs_set(world, ebox, Transform, {0.0f, 0.0f, depth*8.0f, count*12.0f});
+        ecs_set_pair(world, ebox, Position, World, {depth*8.0f, count*12.0f});
+        ecs_set(world, ebox, SceneGraph, {prev, NULL, true, true, true, true});
+
         // log_trace("%s\n", path);
         Text* text = ecs_get_mut(world, ebox, Text);
         memset(text->str, 0, sizeof(text->str));
@@ -736,42 +908,74 @@ void lambda_function(lambda_parameters* params)
         });
         log_trace("ent = %s\n", str);
         ecs_os_free(str);
+
+
+        if (prev)
+        {
+            // printf("%s has next %s\n", ecs_get_name(world, ebox), ecs_get_name(world, prev));
+            if (prev && ecs_is_alive(world, prev))
+            {
+                SceneGraph* prevNode = ecs_get_mut(world, prev, SceneGraph);
+                prevNode->next = ebox;
+                log_trace("%s has next %s\n", ecs_get_name(world, prev), ecs_get_name(world, ebox));
+                // printf("%s", ecs_get_name(world, root));
+            }
+        }
+
+        return ebox;
     }
+    return NULL;
 }
 
-int iter_depth_recursive(ecs_world_t* world, ecs_entity_t root, int depth, int count)
+int get_children_count(ecs_world_t* world, ecs_entity_t root)
 {
-    lambda_parameters params = {world, root, depth, count};
-    lambda_function(&params);
+    int count = 0;
     ecs_iter_t it = ecs_children(world, root);
-    depth++;
     while (ecs_children_next(&it)) {
         for (int i = 0; i < it.count; i++)
         {
             ecs_entity_t child = it.entities[i];
-            count += 1;
-            count = iter_depth_recursive(world, child, depth, count);
+            count += 1 + get_children_count(world, child);
         }
     }
     return count;
 }
 
-// int iter_depth_recursive(ecs_world_t* world, ecs_entity_t root, int depth, int count)
-// {
-//     lambda_parameters params = {world, root, depth, count};
-//     lambda_function(&params);
-//     ecs_iter_t it = ecs_children(world, root);
-//     depth++;
-//     while (ecs_children_next(&it)) {
-//         for (int i = 0; i < it.count; i++)
-//         {
-//             ecs_entity_t child = it.entities[i];
-//             count += 1;
-//             count = iter_depth_recursive(world, child, depth, count);
-//         }
-//     }
-//     return count;
-// }
+typedef ecs_entity_t (*lambda_function_ptr)(lambda_parameters*);
+
+lambda_output iter_depth_recursive(ecs_world_t* world, ecs_entity_t root, int depth, int count, ecs_entity_t prev, lambda_data* data, lambda_function_ptr lambda)
+{
+    lambda_output lo_ret;
+    lambda_parameters params = {world, root, depth, count, prev};
+    ecs_entity_t createdNode = lambda(&params);
+
+    lo_ret.count = count;
+    lo_ret.firstCreatedNode = createdNode;
+    lo_ret.lastCreatedNode = createdNode;
+
+    ecs_entity_t lastPrev = createdNode;
+    ecs_iter_t it = ecs_children(world, root);
+
+    depth++;
+    while (ecs_children_next(&it)) {
+        for (int i = 0; i < it.count; i++)
+        {
+            ecs_entity_t child = it.entities[i];
+            lambda_output lo = iter_depth_recursive(world, child, depth, count + 1, lastPrev, data, lambda);
+            data->nodes[count] = lo.firstCreatedNode;
+            data->parents[count] = createdNode;
+            count = lo.count;
+            lastPrev = lo.lastCreatedNode;
+        }
+    }
+
+    lo_ret.count = count;
+    lo_ret.lastCreatedNode = lastPrev;
+    return lo_ret;
+}
+
+    // Non base root nodes with children are not properly parented (added to data), why not? 
+
 
 int main(int argc, char *argv[]) {
     log_set_quiet(true);
@@ -793,6 +997,7 @@ int main(int argc, char *argv[]) {
     ECS_META_COMPONENT(world, Text);
     ECS_META_COMPONENT(world, Test);
     ECS_META_COMPONENT(world, SceneGraph);
+    ECS_META_COMPONENT(world, Renderable);
 
     ECS_COMPONENT_DEFINE(world, TestNormal);
     ECS_COMPONENT_DEFINE(world, Font);
@@ -800,8 +1005,14 @@ int main(int argc, char *argv[]) {
     ECS_COMPONENT_DEFINE(world, EventKeyInput);
     ECS_COMPONENT_DEFINE(world, SDL_Interface);
 
-
     ECS_TAG_DEFINE(world, Selected);
+    ECS_TAG_DEFINE(world, Symbol);
+    ECS_TAG_DEFINE(world, World);
+    ECS_TAG_DEFINE(world, Local);
+    // ecs_add_id(world, Symbol, EcsSymmetric);
+
+    // TODO: Vertical/horizontal scene graph hierarchy lines
+    // TODO: Toggle scene graph expanded
 
     ecs_entity_t ent = ecs_new_entity(world, "ent");
     ecs_add(world, ent, Textbox);
@@ -862,12 +1073,6 @@ int main(int argc, char *argv[]) {
     ecs_entity_t tb = ecs_new(world, 0);
     ecs_add(world, tb, Textbox);
 
-    ecs_query_t *q = ecs_query(world, {
-        .filter.terms = {
-            { .id = ecs_id(Transform), .inout = EcsInOut },
-        }
-    });
-
     FILE* file = fopen("log.txt", "w");
     if (file == NULL) {
         printf("Failed to open log file.\n");
@@ -875,25 +1080,63 @@ int main(int argc, char *argv[]) {
     }
     log_add_fp(file, 0);
 
-    iter_depth_recursive(world, sceneGraph, 0, 0);
+
+    lambda_data sc_data;
+    int graphCount = get_children_count(world, sceneGraph);
+    sc_data.nodes = calloc(graphCount, sizeof(ecs_entity_t));
+    sc_data.parents = calloc(graphCount, sizeof(ecs_entity_t));
+    iter_depth_recursive(world, sceneGraph, 0, 0, NULL, &sc_data, &lambda_function);
+    for (int i = 0; i < graphCount; i++)
+    {
+        if (ecs_is_valid(world, sc_data.nodes[i]) && ecs_is_valid(world, sc_data.parents[i]))
+        {
+            ecs_add_pair(world, sc_data.nodes[i], EcsChildOf, sc_data.parents[i]);
+        }
+    }
+    
 
     ECS_SYSTEM(world, MouseMovableSelection, EcsPostUpdate, Movable(parent), Transform(parent), Transform, Sprite, EventMouseClick(input));
     ECS_SYSTEM(world, MouseMoveGrabbed, EcsPostUpdate, Movable, Transform, EventMouseMotion(input));
     ECS_SYSTEM(world, Input, EcsPreUpdate, [inout] *());
     ECS_SYSTEM(world, ConsumeEvents, EcsPostFrame, (ConsumeEvent, *));
-    ECS_SYSTEM(world, TransformCascadeHierarchy, EcsPreFrame, ?Transform(parent|cascade), Transform);
+    // ECS_SYSTEM(world, TransformCascadeHierarchy, EcsPreFrame, ?Position(parent|cascade), Transform);
+    ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "TransformCascadeHierarchy",
+            .add = { ecs_dependson(EcsPreFrame) }
+        }),
+        .query.filter.terms = {
+            {.id = ecs_pair(ecs_id(Position), World), .inout = EcsInOut },
+            {.id = ecs_pair(ecs_id(Position), Local), .inout = EcsIn, .oper = EcsOptional },
+            {.id = ecs_pair(ecs_id(Position), World), 
+            .inout = EcsIn, 
+            .src.flags = EcsParent | EcsCascade, 
+            .oper = EcsOptional
+            },
+        },
+        .callback = TransformCascadeHierarchy
+    });
+
+    ECS_SYSTEM(world, SceneGraphSettingsCascadeHierarchy, EcsPreFrame, ?SceneGraph(parent|cascade), SceneGraph, Renderable);
+
     ECS_SYSTEM(world, TextboxEntry, EcsOnUpdate, Textbox, Text, EventTextInput(input));
     ECS_SYSTEM(world, HandleBackspace, EcsOnUpdate, Textbox, Text, EventKeyInput(input));
+
+    ECS_SYSTEM(world, ToggleSceneGraphHierarchy, EcsOnUpdate, SceneGraph, Selected, EventKeyInput(input), [inout] *());
+    ECS_SYSTEM(world, KeyNavSceneGraph, EcsOnUpdate, SceneGraph, Selected, EventKeyInput(input));
+
     ECS_SYSTEM(world, TextboxClick, EcsOnUpdate, Textbox, Position, Size, EventMouseClick(input));
     ECS_SYSTEM(world, TextboxCursorBlink, EcsOnUpdate, Textbox, Cursor);
 
-    ECS_SYSTEM(world, Render, EcsPostFrame, Transform, Sprite, SDL_Interface(sdl));
-    ECS_SYSTEM(world, RenderBox, EcsPostFrame, Transform, Text, SceneGraph, SDL_Interface(sdl));
-    ECS_SYSTEM(world, RenderSelectedBox, EcsPostFrame, Transform, Text, SceneGraph, Selected, SDL_Interface(sdl));
-    ECS_SYSTEM(world, RenderText, EcsPostFrame, Transform, Text, Font(resource), SDL_Interface(sdl));
+    ECS_SYSTEM(world, Render, EcsPostFrame, (Position, World), Sprite, SDL_Interface(sdl));
+    ECS_SYSTEM(world, RenderBox, EcsPostFrame, (Position, World), Text, SceneGraph, SDL_Interface(sdl));
+    ECS_SYSTEM(world, RenderSelectedBox, EcsPostFrame, (Position, World), Text, SceneGraph, Selected, SDL_Interface(sdl));
+    ECS_SYSTEM(world, RenderText, EcsPostFrame, (Position, World), Text, Font(resource), ?Renderable, SDL_Interface(sdl));
     ECS_SYSTEM(world, RenderPresent, EcsPostFrame, SDL_Interface);
+    
 
     while (ecs_progress(world, 0)) {}
+    // ecs_progress(world, 0);
 
     return ecs_fini(world);
 }

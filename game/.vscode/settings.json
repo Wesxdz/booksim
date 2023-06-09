@@ -14,6 +14,7 @@
 		"valarray": "c",
 		"typeindex": "c",
 		"typeinfo": "c",
-		"chrono": "c"
+		"chrono": "c",
+		"random": "c"
 	}
 }
