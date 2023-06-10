@@ -13,6 +13,7 @@ set(CMAKE_BUILD_TYPE Debug)
 add_subdirectory(flecs-3.2.3)
 add_subdirectory(SDL2-2.0.20)
 add_subdirectory(SDL2_ttf-2.20.2)
+add_subdirectory(SDL_image-2.6.0)
 
 # Include FetchContent module
 # include(FetchContent)
@@ -25,5 +26,5 @@ add_subdirectory(SDL2_ttf-2.20.2)
 # FetchContent_MakeAvailable(SDL2)
 
 # Link the flecs library and SDL2 to the executable
-target_link_libraries(agent flecs SDL2::SDL2 SDL2_ttf ${CMAKE_DL_LIBS} m pthread)
+target_link_libraries(agent flecs SDL2::SDL2 SDL2_ttf SDL2_image ${CMAKE_DL_LIBS} m pthread)
 

@@ -1,6 +1,7 @@
 #include "flecs.h"
 #include <SDL.h>
 #include <SDL_ttf.h>
+#include <SDL_image.h>
 #define CUTE_ASEPRITE_IMPLEMENTATION
 #include "cute_aseprite.h"
 #include <string.h>
@@ -20,6 +21,7 @@ ECS_STRUCT(SceneGraph,
     bool user_mark_expanded;
     bool is_visible;
     bool is_expanded;
+    int32_t children_count;
 });
 
 ECS_TAG_DECLARE(Selected);
@@ -32,6 +34,13 @@ ECS_STRUCT(Transform, {
     float y;
     float r_x;
     float r_y;
+});
+
+ECS_STRUCT(Line, {
+    int32_t x1;
+    int32_t y1;
+    int32_t x2;
+    int32_t y2;
 });
 
 // TODO: Replace transform with (Position, World)/(Position, Local) pairs!
@@ -108,6 +117,12 @@ ECS_STRUCT(EventMouseClick, {
     uint8_t state;
 });
 
+ECS_STRUCT(EventMouseWheel, {
+    int32_t x;
+    int32_t y;
+    uint32_t direction;
+});
+
 ECS_STRUCT(EventTextInput, {
     char text[33]; // 32 characters + null-terminating character
 });
@@ -175,33 +190,35 @@ void Render(ecs_iter_t *it) {
 void RenderBox(ecs_iter_t *it) {
     Position *p = ecs_field(it, Position, 1);
     Text* t = ecs_field(it, Text, 2);
+    SceneGraph* sc = ecs_field(it, SceneGraph, 3);
     SDL_Interface* sdl = ecs_field(it, SDL_Interface, 4);
 
     for (int i = 0; i < it->count; i++) 
     {
         // create SDL_Rect for the box around the text
         SDL_Rect rect;
-        rect.x = p[i].x - 2; // subtract padding from position
-        rect.y = p[i].y + 2; // subtract padding from position
-        if (t[i].surface)
-        {
-            rect.w = t[i].surface->w + 4; // add twice the padding to the width
-            rect.h = t[i].surface->h - 1; // add twice the padding to the height
-        } else
-        {
-            rect.w = 0;
-            rect.h = 0;
-        }
+        // rect.x = p[i].x - 2; // subtract padding from position
+        // rect.y = p[i].y + 2; // subtract padding from position
+        // if (t[i].surface)
+        // {
+        //     rect.w = t[i].surface->w + 4; // add twice the padding to the width
+        //     rect.h = t[i].surface->h - 1; // add twice the padding to the height
+        // } else
+        // {
+        //     rect.w = 0;
+        //     rect.h = 0;
+        // }
 
-        // draw the box
-        // SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); // set color to white for the outline
-        // SDL_RenderDrawRect(renderer, &rect);
+        rect.x = 0;
+        rect.y = p[i].y + 2;
+        rect.w = p[i].x + t[i].surface->w + 2;
+        rect.h = t[i].surface->h - 1; // add twice the padding to the height
 
         // enable blending
         SDL_SetRenderDrawBlendMode(sdl->renderer, SDL_BLENDMODE_BLEND);
 
         // set color to white with alpha for the filled box
-        SDL_SetRenderDrawColor(sdl->renderer, 0, 0, 0, 164); // alpha set to 128 for semi-transparency
+        SDL_SetRenderDrawColor(sdl->renderer, 0, 0, 0, 200); // alpha set to 128 for semi-transparency
 
         // draw the filled box
         SDL_RenderFillRect(sdl->renderer, &rect);
@@ -212,28 +229,44 @@ void RenderBox(ecs_iter_t *it) {
 void RenderSelectedBox(ecs_iter_t *it) {
     Position *p = ecs_field(it, Position, 1);
     Text* t = ecs_field(it, Text, 2);
+    SceneGraph* sc = ecs_field(it, SceneGraph, 3);
     SDL_Interface* sdl = ecs_field(it, SDL_Interface, 5);
 
-    for (int i = 0; i < it->count; i++) 
+for (int i = 0; i < it->count; i++) 
+{
+    // create SDL_Rect for the box around the text
+    SDL_Rect rect;
+    rect.x = p[i].x - 2; // subtract padding from position
+    rect.y = p[i].y + 2; // subtract padding from position
+    if (t[i].surface)
     {
-        // create SDL_Rect for the box around the text
-        SDL_Rect rect;
-        rect.x = p[i].x - 2; // subtract padding from position
-        rect.y = p[i].y + 2; // subtract padding from position
-        if (t[i].surface)
-        {
-            rect.w = t[i].surface->w + 4; // add twice the padding to the width
-            rect.h = t[i].surface->h - 1; // add twice the padding to the height
-        } else
-        {
-            rect.w = 0;
-            rect.h = 0;
-        }
-
-        // draw the box
-        SDL_SetRenderDrawColor(sdl->renderer, 255, 255, 255, 255); // set color to white for the outline
-        SDL_RenderDrawRect(sdl->renderer, &rect);
+        rect.w = t[i].surface->w + 4; // add twice the padding to the width
+        rect.h = t[i].surface->h - 1; // add twice the padding to the height
+    } else
+    {
+        rect.w = 0;
+        rect.h = 0;
     }
+
+    // draw the box
+    SDL_SetRenderDrawColor(sdl->renderer, 255, 255, 255, 255); // set color to white for the outline
+    SDL_RenderDrawRect(sdl->renderer, &rect);
+
+    if (sc[i].children_count)
+    {
+        // create SDL_Rect for the playful bright purple square
+        SDL_Rect purple_rect;
+        purple_rect.x = rect.x - (rect.h+2); // position it right after the previous box
+        purple_rect.y = rect.y; // same y position as previous box
+        purple_rect.w = rect.h+1; // width equals to height of previous box to make a square
+        purple_rect.h = rect.h; // same height as previous box
+
+        // draw the purple box
+        SDL_SetRenderDrawColor(sdl->renderer, 151, 41, 255, 255); // set color to bright purple
+        SDL_RenderDrawRect(sdl->renderer, &purple_rect);
+    }
+}
+
 
 }
 
@@ -289,6 +322,10 @@ void Input(ecs_iter_t *it) {
             memset(text_input->text, 0, sizeof(text_input->text));
             strcat(text_input->text, e.text.text);
             ecs_set_pair(it->world, input, ConsumeEvent, ecs_id(EventTextInput), {});
+        } else if (e.type == SDL_MOUSEWHEEL)
+        {
+            ecs_set(it->world, input, EventMouseWheel, {e.wheel.x, e.wheel.y, e.wheel.direction});
+            ecs_set_pair(it->world, input, ConsumeEvent, ecs_id(EventMouseWheel), {}); // TODO: Refactor ConsumeEvent to tag...
         }
     }
 }
@@ -338,7 +375,7 @@ void SceneGraphSettingsCascadeHierarchy(ecs_iter_t *it) {
                 sc[i].is_expanded = sc_parent->is_expanded;
             }
         } else 
-        {
+        { 
             sc[i].is_expanded = sc[i].user_mark_expanded;
         }
         // printf("%s is %d expanded\n", ecs_get_name(it->world, it->entities[i]), sc[i].is_expanded);
@@ -543,6 +580,40 @@ void ConsumeEvents(ecs_iter_t* it)
     }
 }
 
+void GenTextTexture(ecs_iter_t* it)
+{
+    Text* text = ecs_field(it, Text, 1);
+    Font* font = ecs_field(it, Font, 3);
+    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 4);
+    for (int i = 0; i < it->count; it++)
+    {
+        if (text[i].surface) {
+            SDL_FreeSurface(text[i].surface);
+        }
+        if (text[i].texture) {
+            SDL_DestroyTexture(text[i].texture);
+        }
+
+        // Create new surface and texture
+        text[i].surface = TTF_RenderText_Solid(font->font, text[i].str, (SDL_Color){255, 255, 255, 255});
+        text[i].texture = SDL_CreateTextureFromSurface(sdl->renderer, text[i].surface);
+        text[i].changed = 0;  // Mark text as unchanged
+    }
+}
+
+void RenderLines(ecs_iter_t* it)
+{
+    Position* p = ecs_field(it, Position, 1);
+    Line* l = ecs_field(it, Line, 2);
+    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 3);
+
+    for (int i = 0; i < it->count; i++)
+    {
+        SDL_SetRenderDrawColor(sdl->renderer, 96, 96, 96, 255);
+        SDL_RenderDrawLine(sdl->renderer, p[i].x + l[i].x1, p[i].y + l[i].y1, p[i].x +  l[i].x2, p[i].y + l[i].y2);
+    }
+}
+
 void RenderText(ecs_iter_t *it) {
     Position* p = ecs_field(it, Position, 1);
     Text *text = ecs_field(it, Text, 2);
@@ -585,13 +656,6 @@ void KeyNavSceneGraph(ecs_iter_t* it)
     SceneGraph* sc = ecs_field(it, SceneGraph, 1);
     EventKeyInput* event = ecs_field(it, EventKeyInput, 3);
 
-    // for (int i = 0; i < it->count; i++) {
-    //     char* name = ecs_get_name(it->world, it->entities[i]);
-    //     if (name)
-    //     {
-    //         printf("%s\n", name);
-    //     }
-    // }
     if (event->keycode == SDLK_DOWN || event->keycode == SDLK_s)
     {
         // SceneGraph* nextNode = ecs_get(it.world, sc->next, SceneGraph);
@@ -619,6 +683,44 @@ void KeyNavSceneGraph(ecs_iter_t* it)
         }
     }
 }
+
+void MouseWheelNavSceneGraph(ecs_iter_t* it)
+{
+    SceneGraph* sc = ecs_field(it, SceneGraph, 1);
+    EventMouseWheel* event = ecs_field(it, EventMouseClick, 3);
+
+    if (event->y < 0)
+    {
+        for (int i = 0; i < it->count; i++)
+        {
+            if (ecs_is_valid(it->world, sc[i].next))
+            {
+                ecs_remove(it->world, it->entities[i], Selected);
+                ecs_add(it->world, sc[i].next, Selected);
+            }
+            else
+            {
+                printf("%s next is not valid\n", ecs_get_name(it->world, it->entities[i]));
+            }
+        }
+    }
+    else if (event->y > 0) 
+    {
+        for (int i = 0; i < it->count; i++)
+        {
+            if (ecs_is_valid(it->world, sc[i].prev))
+            {
+                ecs_remove(it->world, it->entities[i], Selected);
+                ecs_add(it->world, sc[i].prev, Selected);
+            }
+            else
+            {
+                printf("%s prev is not valid\n", ecs_get_name(it->world, it->entities[i]));
+            }
+        }
+    }
+}
+
 
 void RenderPresent(ecs_iter_t *it)
 {
@@ -847,6 +949,35 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, 
     }
 }
 
+Sprite loadSprite(SDL_Renderer* renderer, char* file_path) {
+    Sprite sprite;
+
+    // Load image into a surface
+    SDL_Surface* temp_surface = IMG_Load(file_path);
+    if (!temp_surface) {
+        printf("Failed to load image: %s\n", IMG_GetError());
+        return sprite;
+    }
+
+    // Convert surface to texture
+    sprite.texture = SDL_CreateTextureFromSurface(renderer, temp_surface);
+    if (!sprite.texture) {
+        printf("Failed to create texture: %s\n", SDL_GetError());
+        SDL_FreeSurface(temp_surface);
+        return sprite;
+    }
+
+    // Fill in sprite struct
+    sprite.width = temp_surface->w;
+    sprite.height = temp_surface->h;
+    sprite.visible = true;
+
+    // Free the temporary surface
+    SDL_FreeSurface(temp_surface);
+
+    return sprite;
+}
+
 typedef struct {
     ecs_world_t* world;
     ecs_entity_t root;
@@ -889,25 +1020,51 @@ ecs_entity_t lambda_function(lambda_parameters* params)
             ecs_add(world, ebox, Selected);
             printf("Selected added to %s\n", ecs_get_name(world, root));
         }
-        ecs_set(world, ebox, Text, {"", NULL, NULL, 1});
-        ecs_set(world, ebox, Renderable, {0, true});
+        ecs_set(world, ebox, Text, {*s, NULL, NULL, 1});
         char* path = ecs_get_fullpath(world, root);
         // ecs_set(world, ebox, Transform, {0.0f, 0.0f, depth*8.0f, count*12.0f});
-        ecs_set_pair(world, ebox, Position, World, {depth*8.0f, count*12.0f});
-        ecs_set(world, ebox, SceneGraph, {prev, NULL, true, true, true, true});
+        int start_x = depth*8.0f;
+        int start_y = (count-1)*12.0f-2;
+        int children_count = get_children_count(world, root);
+        bool has_children = children_count > 0;
+        
+        ecs_set(world, ebox, SceneGraph, {prev, NULL, true, true, true, true, children_count});
 
-        // log_trace("%s\n", path);
+        log_trace("%s\n", path);
         Text* text = ecs_get_mut(world, ebox, Text);
         memset(text->str, 0, sizeof(text->str));
         strcat(text->str, s);
         ecs_os_free(path);
+
+        ecs_set(world, ebox, Renderable, {0, true});
+        if (has_children)
+        {
+            ecs_set_pair(world, ebox, Position, World, {start_x+11, start_y});
+            ecs_entity_t arrow = ecs_new(world, 0);
+            text = ecs_get_mut(world, ebox, Text);
+            int txtWidth = 0;
+            SDL_QueryTexture(text->texture, NULL, NULL, &txtWidth, NULL);
+
+            // ecs_set_pair(world, arrow, Position, World, {start_x + txtWidth+5.0f, start_y+6});
+            ecs_set_pair(world, arrow, Position, World, {start_x-2 , start_y+6});
+            ecs_entity_t sdl = ecs_lookup(world, "sdl");
+            SDL_Interface* sdlinterface = ecs_get_mut(world, sdl, SDL_Interface);
+            Sprite sprite = loadSprite(sdlinterface->renderer, "../res/arrow_down.png");
+            ecs_set(world, arrow, Sprite, {sprite.texture, sprite.width, sprite.height, sprite.visible});
+            ecs_set(world, ebox, Line, {-11, 16, -11, 16 + children_count*12-8});
+        } else
+        {
+            ecs_set_pair(world, ebox, Position, World, {start_x, start_y});
+            ecs_set(world, ebox, Line, {-8, 8, -4, 8});
+        }
+
         // printf("%s\n", ecs_get_name(it.world, it.entities[i]));
-        char* str = ecs_entity_to_json(world, root, &(ecs_entity_to_json_desc_t) {
-            .serialize_path = true,
-            .serialize_values = true
-        });
-        log_trace("ent = %s\n", str);
-        ecs_os_free(str);
+        // char* str = ecs_entity_to_json(world, root, &(ecs_entity_to_json_desc_t) {
+        //     .serialize_path = true,
+        //     .serialize_values = true
+        // });
+        // log_trace("ent = %s\n", str);
+        // ecs_os_free(str);
 
 
         if (prev)
@@ -974,8 +1131,11 @@ lambda_output iter_depth_recursive(ecs_world_t* world, ecs_entity_t root, int de
     return lo_ret;
 }
 
-    // Non base root nodes with children are not properly parented (added to data), why not? 
-
+ecs_entity_t create_ui_element(ecs_world_t *world, const char *name) {
+    ecs_entity_t e = ecs_new_id(world);
+    ecs_set_name(world, e, name);
+    return e;
+}
 
 int main(int argc, char *argv[]) {
     log_set_quiet(true);
@@ -991,6 +1151,7 @@ int main(int argc, char *argv[]) {
     ECS_META_COMPONENT(world, EventMouseMotion);
     ECS_META_COMPONENT(world, Textbox);
     ECS_META_COMPONENT(world, EventTextInput);
+    ECS_META_COMPONENT(world, EventMouseWheel);
     ECS_META_COMPONENT(world, Position);
     ECS_META_COMPONENT(world, Size);
     ECS_META_COMPONENT(world, Cursor);
@@ -998,6 +1159,7 @@ int main(int argc, char *argv[]) {
     ECS_META_COMPONENT(world, Test);
     ECS_META_COMPONENT(world, SceneGraph);
     ECS_META_COMPONENT(world, Renderable);
+    ECS_META_COMPONENT(world, Line);
 
     ECS_COMPONENT_DEFINE(world, TestNormal);
     ECS_COMPONENT_DEFINE(world, Font);
@@ -1022,7 +1184,7 @@ int main(int argc, char *argv[]) {
     ecs_entity_t sceneGraph = ecs_new_entity(world, "scene_graph_interface");
     ecs_add(world, sceneGraph, SceneGraph);
 
-   ase_t* ase = cute_aseprite_load_from_file("table.ase", NULL);
+    ase_t* ase = cute_aseprite_load_from_file("table.ase", NULL);
 
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
@@ -1062,6 +1224,8 @@ int main(int argc, char *argv[]) {
 
     ecs_entity_t sdl = ecs_set_name(world, 0, "sdl");
     ecs_set(world, sdl, SDL_Interface, {window, renderer});
+    
+    ECS_OBSERVER(world, GenTextTexture, EcsOnSet, Text, Renderable, Font(resource), SDL_Interface(sdl));
 
     // ecs_entity_t test = ecs_new(world, 0);
     // ecs_set(world, test, Transform, {0, 0, 64, 64});
@@ -1124,6 +1288,7 @@ int main(int argc, char *argv[]) {
 
     ECS_SYSTEM(world, ToggleSceneGraphHierarchy, EcsOnUpdate, SceneGraph, Selected, EventKeyInput(input), [inout] *());
     ECS_SYSTEM(world, KeyNavSceneGraph, EcsOnUpdate, SceneGraph, Selected, EventKeyInput(input));
+    ECS_SYSTEM(world, MouseWheelNavSceneGraph, EcsOnUpdate, SceneGraph, Selected, EventMouseWheel(input));
 
     ECS_SYSTEM(world, TextboxClick, EcsOnUpdate, Textbox, Position, Size, EventMouseClick(input));
     ECS_SYSTEM(world, TextboxCursorBlink, EcsOnUpdate, Textbox, Cursor);
@@ -1132,6 +1297,7 @@ int main(int argc, char *argv[]) {
     ECS_SYSTEM(world, RenderBox, EcsPostFrame, (Position, World), Text, SceneGraph, SDL_Interface(sdl));
     ECS_SYSTEM(world, RenderSelectedBox, EcsPostFrame, (Position, World), Text, SceneGraph, Selected, SDL_Interface(sdl));
     ECS_SYSTEM(world, RenderText, EcsPostFrame, (Position, World), Text, Font(resource), ?Renderable, SDL_Interface(sdl));
+    ECS_SYSTEM(world, RenderLines, EcsPostFrame, (Position, World), Line, SDL_Interface(sdl));
     ECS_SYSTEM(world, RenderPresent, EcsPostFrame, SDL_Interface);
     
 

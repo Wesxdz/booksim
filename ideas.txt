@@ -24,3 +24,6 @@ Automate coding
 Lookup documentation (recursively summarizing)
 Write simple example as a unit test proof
 Once proof is verified, integrate
+
+ZeroC with Flecs
+ie (zero concept for ECS implementation)

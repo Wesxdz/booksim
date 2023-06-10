@@ -1,0 +1,8 @@
+Progress:
+WYSIWYG builder
+Chatbox for speaking with agent
+Agent dialogue box
+Multiagent conversation
+Prefab user interface
+3D renderer
+Read LayoutLMv3 paper - make plan to fine tune for layout reading books
