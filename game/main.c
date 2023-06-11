@@ -21,7 +21,6 @@ ECS_STRUCT(SceneGraph,
     bool user_mark_expanded;
     bool is_visible;
     bool is_expanded;
-    bool is_parent_expanded;
     int32_t children_count;
     int32_t index;
 });
@@ -335,7 +334,7 @@ void SceneGraphSettingsCascadeHierarchy(ecs_iter_t *it) {
             // printf("%s's parent is %d expanded\n", ecs_get_name(it->world, it->entities[i]), sc_parent->is_expanded);
             if (!sc[i].user_mark_expanded)
             {
-                sc[i].is_expanded = false;
+                sc[i].is_expanded = sc_parent->is_expanded;
             } else
             {
                 if (sc_parent->user_mark_expanded == false)
@@ -348,9 +347,8 @@ void SceneGraphSettingsCascadeHierarchy(ecs_iter_t *it) {
             }
         } else 
         { 
-            sc[i].is_expanded = sc[i].user_mark_expanded;
+            sc[i].is_expanded = true;
         }
-        sc[i].is_parent_expanded = sc[i].is_expanded;
         // printf("%s is %d expanded\n", ecs_get_name(it->world, it->entities[i]), sc[i].is_expanded);
         // settings[i].visible = sc[i].is_expanded;
     }
@@ -629,23 +627,31 @@ void KeyNavSceneGraph(ecs_iter_t* it)
     {
         // SceneGraph* nextNode = ecs_get(it.world, sc->next, SceneGraph);
         for (int i = 0; i < it->count; i ++) {
-            if (ecs_is_valid(it->world, sc[i].next))
+            ecs_entity_t next = sc[i].next;
+            while (ecs_is_valid(it->world, next))
             {
-                ecs_add_pair(it->world, it->entities[i], EcsChildOf, sc[i].next);
-            } else
-            {
-                printf("%s next is not valid\n", ecs_get_name(it->world, it->entities[i]));
+                SceneGraph* scNext = ecs_get(it->world, next, SceneGraph);
+                if (scNext->is_expanded)
+                {
+                    ecs_add_pair(it->world, it->entities[i], EcsChildOf, next);
+                    break;
+                }
+                next = scNext->next;
             }
         }
     } else if (event->keycode == SDLK_UP || event->keycode == SDLK_w)
     {
         for (int i = 0; i < it->count; i ++) {
-            if (ecs_is_valid(it->world, sc[i].prev))
+            ecs_entity_t prev = sc[i].prev;
+            while (ecs_is_valid(it->world, prev))
             {
-                ecs_add_pair(it->world, it->entities[i], EcsChildOf, sc[i].prev);
-            } else
-            {
-                printf("%s prev is not valid\n", ecs_get_name(it->world, it->entities[i]));
+                SceneGraph* scPrev = ecs_get(it->world, prev, SceneGraph);
+                if (scPrev->is_expanded)
+                {
+                    ecs_add_pair(it->world, it->entities[i], EcsChildOf, prev);
+                    break;
+                }
+                prev = scPrev->prev;
             }
         }
     }
@@ -1077,7 +1083,7 @@ ecs_entity_t lambda_function(lambda_parameters* params)
         int children_count = get_children_count(world, root);
         bool has_children = children_count > 0;
         
-        ecs_set(world, ebox, SceneGraph, {prev, NULL, true, true, true, true, true, children_count, count});
+        ecs_set(world, ebox, SceneGraph, {prev, NULL, true, true, true, true, children_count, count});
 
         log_trace("%s\n", path);
         Text* text = ecs_get_mut(world, ebox, Text);
@@ -1451,7 +1457,7 @@ int main(int argc, char *argv[]) {
     ECS_SYSTEM(world, RenderPresent, EcsPostFrame, SDL_Interface);
     
     ecs_query_t* qsc = ecs_query(world, {
-            .filter.expr = "[inout] (Position, World), SceneGraph",
+            .filter.expr = "[inout] (Position, World), SceneGraph, ?SceneGraph(parent)",
             .order_by = (ecs_order_by_action_t)compare_sc_index,
             .order_by_component = ecs_id(SceneGraph)
         });
@@ -1463,13 +1469,14 @@ int main(int argc, char *argv[]) {
         while (ecs_query_next(&sc_it)) {
             Position* p = ecs_field(&sc_it, Position, 1);
             SceneGraph* sc = ecs_field(&sc_it, SceneGraph, 2);
+            SceneGraph* sc_parent = ecs_field(&sc_it, SceneGraph, 2);
 
             
             for (int i = 0; i < sc_it.count; i++)
             {
                 char* n = ecs_get_name(sc_it.world, sc_it.entities[i]);
                 // printf("%d %s %d\n", sc[i].is_expanded, n, visible_index);
-                if (sc[i].is_expanded)
+                if (sc[i].is_expanded || (sc_parent && !sc_parent->is_expanded && !sc[i].user_mark_expanded))
                 {
                     visible_index++;
                 }

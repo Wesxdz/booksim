@@ -16,6 +16,7 @@
 		"typeinfo": "c",
 		"chrono": "c",
 		"random": "c",
-		"variant": "c"
+		"variant": "c",
+		"tuple": "c"
 	}
 }
