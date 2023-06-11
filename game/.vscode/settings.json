@@ -15,6 +15,7 @@
 		"typeindex": "c",
 		"typeinfo": "c",
 		"chrono": "c",
-		"random": "c"
+		"random": "c",
+		"variant": "c"
 	}
 }

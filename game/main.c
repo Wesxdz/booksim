@@ -21,7 +21,9 @@ ECS_STRUCT(SceneGraph,
     bool user_mark_expanded;
     bool is_visible;
     bool is_expanded;
+    bool is_parent_expanded;
     int32_t children_count;
+    int32_t index;
 });
 
 ECS_TAG_DECLARE(Selected);
@@ -29,6 +31,7 @@ ECS_TAG_DECLARE(Selected);
 // Relationship
 ECS_TAG_DECLARE(Symbol);
 
+// TODO: Refactor, replace component with Position pairs
 ECS_STRUCT(Transform, {
     float x;
     float y;
@@ -88,6 +91,11 @@ typedef struct TestNormal {
     float value;
 } TestNormal;
 ECS_COMPONENT_DECLARE(TestNormal);
+
+typedef struct SceneGraphLayout {
+    int index;
+} SceneGraphLayout;
+ECS_COMPONENT_DECLARE(SceneGraphLayout);
 
 typedef struct Sprite {
     SDL_Texture* texture;
@@ -316,27 +324,35 @@ void TransformCascadeHierarchy(ecs_iter_t *it) {
 }
 
 void SceneGraphSettingsCascadeHierarchy(ecs_iter_t *it) {
+    // printf("SceneGraphSettingsCascadeHierarchy\n");
     SceneGraph* sc_parent = ecs_field(it, SceneGraph, 1);
     SceneGraph *sc = ecs_field(it, SceneGraph, 2);
-    Renderable* settings = ecs_field(it, Renderable, 3);
+    // Renderable* settings = ecs_field(it, Renderable, 3);
     for (int i = 0; i < it->count; i++) 
     {
         if (sc_parent)
         {
-            log_trace("%s's parent is %d expanded\n", ecs_get_name(it->world, it->entities[i]), sc_parent->is_expanded);
+            // printf("%s's parent is %d expanded\n", ecs_get_name(it->world, it->entities[i]), sc_parent->is_expanded);
             if (!sc[i].user_mark_expanded)
             {
                 sc[i].is_expanded = false;
             } else
             {
-                sc[i].is_expanded = sc_parent->is_expanded;
+                if (sc_parent->user_mark_expanded == false)
+                {
+                    sc[i].is_expanded = false;
+                } else
+                {
+                    sc[i].is_expanded = sc_parent->is_expanded;
+                }
             }
         } else 
         { 
             sc[i].is_expanded = sc[i].user_mark_expanded;
         }
+        sc[i].is_parent_expanded = sc[i].is_expanded;
         // printf("%s is %d expanded\n", ecs_get_name(it->world, it->entities[i]), sc[i].is_expanded);
-        settings[i].visible = sc[i].is_expanded;
+        // settings[i].visible = sc[i].is_expanded;
     }
 }
 
@@ -487,7 +503,6 @@ void TextboxCursorBlink(ecs_iter_t* it) {
 
 void ToggleSceneGraphHierarchy(ecs_iter_t* it)
 {
-    printf("ToggleSceneGraphHierarchy\n");
     SceneGraph* sc = ecs_field(it, SceneGraph, 1);
     EventKeyInput* event = ecs_field(it, EventKeyInput, 3);
     for (int32_t i = 0; i < it->count; i++)
@@ -669,6 +684,23 @@ void MouseWheelNavSceneGraph(ecs_iter_t* it)
     }
 }
 
+void UpdateSceneGraphLayout(ecs_iter_t* it)
+{
+    Position* p = ecs_field(it, Position, 1);
+    SceneGraph* sc = ecs_field(it, SceneGraph, 2);
+
+    int visible_index = 0;
+    for (int i = 0; i < it->count; i++)
+    {
+        visible_index++;
+        printf("VI %d\n", visible_index);
+        // if (sc[i].is_expanded)
+        // {
+        // }
+        p[i].y = (sc[i].index-1)*12.0f-2; // TODO: Better padding config
+    }
+}
+
 void RenderCommander(ecs_iter_t* it)
 {
     // printf("Render COMMANDER!\n");
@@ -742,6 +774,7 @@ void RenderPresent(ecs_iter_t *it)
 
     for (int i = 0; i < it->count; i++) {
         SDL_RenderPresent(sdl[i].renderer);
+        SDL_RenderClear(sdl[i].renderer);
     }
 }
 
@@ -1020,19 +1053,19 @@ ecs_entity_t lambda_function(lambda_parameters* params)
     int count = params->count;
     ecs_entity_t prev = params->prev;
 
-    ecs_entity_t SelectedNode = ecs_new_prefab(world, "selected_node_prefab");
-    ecs_set(world, SelectedNode, Renderable, {2000, true});
-    ecs_set_pair(world, SelectedNode, Position, World, {0, 0});
-    ecs_set_pair(world, SelectedNode, Position, Local, {-2, 2});
-    ecs_set(world, SelectedNode, Box, {0, 0, 0, 0, OUTLINE, {255, 255, 255, 255}});
-    ecs_add(world, SelectedNode, Selected);
-
-    char* root_name = ecs_get_name(world, root);
-    char entityName[256];
-    snprintf(entityName, sizeof(entityName), "%s_%s", root_name, "node");
-
     if (depth > 0)
     {
+        ecs_entity_t SelectedNode = ecs_new_prefab(world, "selected_node_prefab");
+        ecs_set(world, SelectedNode, Renderable, {2000, true});
+        ecs_set_pair(world, SelectedNode, Position, World, {0, 0});
+        ecs_set_pair(world, SelectedNode, Position, Local, {-2, 2});
+        ecs_set(world, SelectedNode, Box, {0, 0, 0, 0, OUTLINE, {255, 255, 255, 255}});
+        ecs_add(world, SelectedNode, Selected);
+
+        char* root_name = ecs_get_name(world, root);
+        char entityName[256];
+        snprintf(entityName, sizeof(entityName), "%s_%s", root_name, "node");
+
         char* s = ecs_get_name(world, root);
         ecs_entity_t ebox = ecs_set_name(world, 0, entityName);
         ecs_add_pair(world, ebox, Symbol, root);
@@ -1044,7 +1077,7 @@ ecs_entity_t lambda_function(lambda_parameters* params)
         int children_count = get_children_count(world, root);
         bool has_children = children_count > 0;
         
-        ecs_set(world, ebox, SceneGraph, {prev, NULL, true, true, true, true, children_count});
+        ecs_set(world, ebox, SceneGraph, {prev, NULL, true, true, true, true, true, children_count, count});
 
         log_trace("%s\n", path);
         Text* text = ecs_get_mut(world, ebox, Text);
@@ -1148,11 +1181,13 @@ int get_children_count(ecs_world_t* world, ecs_entity_t root)
 
 typedef ecs_entity_t (*lambda_function_ptr)(lambda_parameters*);
 
-lambda_output iter_depth_recursive(ecs_world_t* world, ecs_entity_t root, int depth, int count, ecs_entity_t prev, lambda_data* data, lambda_function_ptr lambda)
+lambda_output iter_depth_recursive(ecs_world_t* world, ecs_entity_t root, int depth, int count, ecs_entity_t prev, ecs_entity_t parentCreatedNode, lambda_data* data, lambda_function_ptr lambda)
 {
     lambda_output lo_ret;
     lambda_parameters params = {world, root, depth, count, prev};
     ecs_entity_t createdNode = lambda(&params);
+    data->nodes[count] = createdNode;
+    data->parents[count] = parentCreatedNode;
 
     lo_ret.count = count;
     lo_ret.firstCreatedNode = createdNode;
@@ -1166,9 +1201,7 @@ lambda_output iter_depth_recursive(ecs_world_t* world, ecs_entity_t root, int de
         for (int i = 0; i < it.count; i++)
         {
             ecs_entity_t child = it.entities[i];
-            lambda_output lo = iter_depth_recursive(world, child, depth, count + 1, lastPrev, data, lambda);
-            data->nodes[count] = lo.firstCreatedNode;
-            data->parents[count] = createdNode;
+            lambda_output lo = iter_depth_recursive(world, child, depth, count + 1, lastPrev, createdNode, data, lambda);
             count = lo.count;
             lastPrev = lo.lastCreatedNode;
         }
@@ -1194,6 +1227,17 @@ int compare_z_index(
     (void)e1;
     (void)e2;
     return (r1->z_index > r2->z_index) - (r1->z_index < r2->z_index);
+}
+
+int compare_sc_index(
+    ecs_entity_t e1,
+    const SceneGraph *sc1,
+    ecs_entity_t e2,
+    const SceneGraph *sc2)
+{
+    (void)e1;
+    (void)e2;
+    return (sc1->index > sc2->index) - (sc1->index < sc2->index);
 }
 
 int main(int argc, char *argv[]) {
@@ -1228,6 +1272,7 @@ int main(int argc, char *argv[]) {
     ECS_COMPONENT_DEFINE(world, Sprite);
     ECS_COMPONENT_DEFINE(world, EventKeyInput);
     ECS_COMPONENT_DEFINE(world, SDL_Interface);
+    ECS_COMPONENT_DEFINE(world, SceneGraphLayout);
 
     ECS_TAG_DEFINE(world, Selected);
     ECS_TAG_DEFINE(world, Symbol);
@@ -1245,6 +1290,8 @@ int main(int argc, char *argv[]) {
 
     ecs_entity_t sceneGraph = ecs_new_entity(world, "scene_graph_interface");
     ecs_add(world, sceneGraph, SceneGraph);
+    ecs_add(world, sceneGraph, SceneGraphLayout);
+    
 
     ase_t* ase = cute_aseprite_load_from_file("table.ase", NULL);
 
@@ -1308,15 +1355,24 @@ int main(int argc, char *argv[]) {
 
 
     lambda_data sc_data;
-    int graphCount = get_children_count(world, sceneGraph);
+    int graphCount = get_children_count(world, sceneGraph)+1;
     sc_data.nodes = calloc(graphCount, sizeof(ecs_entity_t));
     sc_data.parents = calloc(graphCount, sizeof(ecs_entity_t));
-    iter_depth_recursive(world, sceneGraph, 0, 0, NULL, &sc_data, &lambda_function);
+    lambda_output lo = iter_depth_recursive(world, sceneGraph, 0, 0, NULL, NULL, &sc_data, &lambda_function);
     for (int i = 0; i < graphCount; i++)
     {
         if (ecs_is_valid(world, sc_data.nodes[i]) && ecs_is_valid(world, sc_data.parents[i]))
         {
+            // char* s2 = ecs_get_name(world, sc_data.parents[i]);
             ecs_add_pair(world, sc_data.nodes[i], EcsChildOf, sc_data.parents[i]);
+        }
+    }
+    for (int i = 0; i < graphCount; i++)
+    {
+        if (ecs_is_valid(world, sc_data.nodes[i]) && ecs_is_valid(world, sc_data.parents[i]))
+        {
+            char* s1 = ecs_get_fullpath(world, sc_data.nodes[i]);
+            printf("Node %s\n", s1);
         }
     }
     
@@ -1343,14 +1399,27 @@ int main(int argc, char *argv[]) {
         .callback = TransformCascadeHierarchy
     });
 
-    ECS_SYSTEM(world, SceneGraphSettingsCascadeHierarchy, EcsPreFrame, ?SceneGraph(parent|cascade), SceneGraph, Renderable);
+    ECS_SYSTEM(world, SceneGraphSettingsCascadeHierarchy, EcsPreFrame, ?SceneGraph(parent|cascade), SceneGraph);
 
     ECS_SYSTEM(world, TextboxEntry, EcsOnUpdate, Textbox, Text, EventTextInput(input));
     ECS_SYSTEM(world, HandleBackspace, EcsOnUpdate, Textbox, Text, EventKeyInput(input));
 
     ECS_SYSTEM(world, ToggleSceneGraphHierarchy, EcsOnUpdate, [inout] SceneGraph(parent), Selected, EventKeyInput(input));
     ECS_SYSTEM(world, KeyNavSceneGraph, EcsOnUpdate, SceneGraph(parent), Selected, EventKeyInput(input));
-    ECS_SYSTEM(world, MouseWheelNavSceneGraph, EcsOnUpdate, SceneGraph, Selected, EventMouseWheel(input));
+    ECS_SYSTEM(world, MouseWheelNavSceneGraph, EcsOnUpdate, SceneGraph(parent), Selected, EventMouseWheel(input));
+
+    // ecs_system(world, {
+    //     .entity = ecs_entity(world, {
+    //         .name = "UpdateSceneGraphLayout",
+    //         .add = { ecs_dependson(EcsOnUpdate) }
+    //     }),
+    //     .query = {
+    //         .filter.expr = "[inout] (Position, World), SceneGraph",
+    //         .order_by = (ecs_order_by_action_t)compare_sc_index,
+    //         .order_by_component = ecs_id(SceneGraph)
+    //     },
+    //     .callback = UpdateSceneGraphLayout
+    // });
 
     ECS_SYSTEM(world, TextboxClick, EcsOnUpdate, Textbox, Position, Size, EventMouseClick(input));
     ECS_SYSTEM(world, TextboxCursorBlink, EcsOnUpdate, Textbox, Cursor);
@@ -1381,8 +1450,33 @@ int main(int argc, char *argv[]) {
     // ECS_SYSTEM(world, RenderSelectedBox, EcsPostFrame, (Position, World), Text, SceneGraph, Selected, SDL_Interface(sdl));
     ECS_SYSTEM(world, RenderPresent, EcsPostFrame, SDL_Interface);
     
+    ecs_query_t* qsc = ecs_query(world, {
+            .filter.expr = "[inout] (Position, World), SceneGraph",
+            .order_by = (ecs_order_by_action_t)compare_sc_index,
+            .order_by_component = ecs_id(SceneGraph)
+        });
 
-    while (ecs_progress(world, 0)) {}
+    while (ecs_progress(world, 0)) {
+
+        ecs_iter_t sc_it = ecs_query_iter(world, qsc);
+        int visible_index = 0;
+        while (ecs_query_next(&sc_it)) {
+            Position* p = ecs_field(&sc_it, Position, 1);
+            SceneGraph* sc = ecs_field(&sc_it, SceneGraph, 2);
+
+            
+            for (int i = 0; i < sc_it.count; i++)
+            {
+                char* n = ecs_get_name(sc_it.world, sc_it.entities[i]);
+                // printf("%d %s %d\n", sc[i].is_expanded, n, visible_index);
+                if (sc[i].is_expanded)
+                {
+                    visible_index++;
+                }
+                p[i].y = (visible_index-1)*12.0f-2; // TODO: Better padding config
+            }
+        }
+    }
     // ecs_progress(world, 0);
 
     return ecs_fini(world);
