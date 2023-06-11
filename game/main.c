@@ -23,12 +23,22 @@ ECS_STRUCT(SceneGraph,
     bool is_expanded;
     int32_t children_count;
     int32_t index;
+    int32_t depth;
 });
 
 ECS_TAG_DECLARE(Selected);
 
 // Relationship
 ECS_TAG_DECLARE(Symbol);
+
+ECS_ENUM(ScopeIndicator, {
+    EXPANDED,
+    REDUCED
+});
+
+ECS_STRUCT(ArrowStatus, {
+    ScopeIndicator scope;
+});
 
 // TODO: Refactor, replace component with Position pairs
 ECS_STRUCT(Transform, {
@@ -189,6 +199,34 @@ typedef struct SDL_Interface
 } SDL_Interface;
 ECS_COMPONENT_DECLARE(SDL_Interface);
 
+Sprite loadSprite(SDL_Renderer* renderer, char* file_path) {
+    Sprite sprite;
+
+    // Load image into a surface
+    SDL_Surface* temp_surface = IMG_Load(file_path);
+    if (!temp_surface) {
+        printf("Failed to load image: %s\n", IMG_GetError());
+        return sprite;
+    }
+
+    // Convert surface to texture
+    sprite.texture = SDL_CreateTextureFromSurface(renderer, temp_surface);
+    if (!sprite.texture) {
+        printf("Failed to create texture: %s\n", SDL_GetError());
+        SDL_FreeSurface(temp_surface);
+        return sprite;
+    }
+
+    // Fill in sprite struct
+    sprite.width = temp_surface->w;
+    sprite.height = temp_surface->h;
+
+    // Free the temporary surface
+    SDL_FreeSurface(temp_surface);
+
+    return sprite;
+}
+
 // Rather than 'Selected' being a tag, it can be a prefab?
 void RenderSelectedBox(ecs_iter_t *it) {
     Position *p = ecs_field(it, Position, 1);
@@ -334,7 +372,13 @@ void SceneGraphSettingsCascadeHierarchy(ecs_iter_t *it) {
             // printf("%s's parent is %d expanded\n", ecs_get_name(it->world, it->entities[i]), sc_parent->is_expanded);
             if (!sc[i].user_mark_expanded)
             {
-                sc[i].is_expanded = sc_parent->is_expanded;
+                if (sc_parent->user_mark_expanded == false)
+                {
+                    sc[i].is_expanded = false;
+                } else
+                {
+                    sc[i].is_expanded = sc_parent->is_expanded;
+                }
             } else
             {
                 if (sc_parent->user_mark_expanded == false)
@@ -495,6 +539,81 @@ void TextboxCursorBlink(ecs_iter_t* it) {
             
             // Update the last toggle time
             cursor[i].lastToggle = currentTime;
+        }
+    }
+}
+
+void UpdateArrowDirection(ecs_iter_t* it)
+{
+    SceneGraph* sc = ecs_field(it, SceneGraph, 1);
+    Position* pos = ecs_field(it, Position, 2);
+    Sprite* sprite = ecs_field(it, Sprite, 3);
+    ArrowStatus* status = ecs_field(it, ArrowStatus, 4);
+    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 5);
+
+    for (int i = 0; i < it->count; i++)
+    {
+        if (sc->children_count)
+        {
+            if (sc->user_mark_expanded)
+            {
+                if (status[i].scope == REDUCED)
+                {
+                    status[i].scope = EXPANDED;
+                    // Switch pos/sprite to down arrow
+                    Sprite update = loadSprite(sdl->renderer, "../res/arrow_down.png");
+                    ecs_set(it->world, it->entities[i], Sprite, {update.texture, update.width, update.height});
+                    ecs_set_pair(it->world, it->entities[i], Position, Local, {-11 , 6});
+                }
+            } else
+            {
+                if (status[i].scope == EXPANDED)
+                {
+                    status[i].scope = REDUCED;
+                    // Switch pos/sprite to right arrow
+                    Sprite update = loadSprite(sdl->renderer, "../res/arrow_right.png");
+                    ecs_set(it->world, it->entities[i], Sprite, {update.texture, update.width, update.height});
+                    ecs_set_pair(it->world, it->entities[i], Position, Local, {-9 , 4});
+
+                }
+            }
+        }
+    }
+}
+
+void UpdateSceneGraphLines(ecs_iter_t* it)
+{
+    SceneGraph* sc = ecs_field(it, SceneGraph, 1);
+    // Line* l = ecs_field(it, Line, 2);
+
+    for (int i = 0; i < it->count; i++)
+    {
+        if (sc[i].children_count)
+        {
+            ecs_entity_t next = sc[i].next;
+            int expanded_children_count = 0;
+            int x = 0;
+            while (ecs_is_valid(it->world, next) && ecs_is_alive(it->world, next) && x < sc[i].children_count)
+            {
+                SceneGraph* scNext = ecs_get_mut(it->world, next, SceneGraph);
+                next = scNext->next;
+                if (scNext->is_expanded)
+                {
+                    expanded_children_count++;
+                }
+                x++;
+            }
+            if (ecs_is_valid(it->world, it->entities[i]))
+            {
+                printf("Update lines!\n");
+                if (expanded_children_count == 0)
+                {
+                    ecs_remove(it->world, it->entities[i], Line);
+                } else
+                {
+                    ecs_set(it->world, it->entities[i], Line, {-11, 16, -11, 16 + expanded_children_count*12-8});
+                }
+            }
         }
     }
 }
@@ -746,9 +865,11 @@ void RenderCommander(ecs_iter_t* it)
     {
         for (int i = 0; i < it->count; i++)
         {
-            SDL_SetRenderDrawColor(sdl->renderer, 96, 96, 96, 255);
+            // SDL_SetRenderDrawColor(sdl->renderer, 96, 96, 96, 255);
+            SDL_SetRenderDrawColor(sdl->renderer, 255, 0, 0, 255);
             SDL_RenderDrawLine(sdl->renderer, p[i].x + l[i].x1, p[i].y + l[i].y1, p[i].x +  l[i].x2, p[i].y + l[i].y2);
         }
+        SDL_SetRenderDrawColor(sdl->renderer, 0, 0, 0, 255);
     }
     if (box)
     {
@@ -1003,34 +1124,6 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, 
     }
 }
 
-Sprite loadSprite(SDL_Renderer* renderer, char* file_path) {
-    Sprite sprite;
-
-    // Load image into a surface
-    SDL_Surface* temp_surface = IMG_Load(file_path);
-    if (!temp_surface) {
-        printf("Failed to load image: %s\n", IMG_GetError());
-        return sprite;
-    }
-
-    // Convert surface to texture
-    sprite.texture = SDL_CreateTextureFromSurface(renderer, temp_surface);
-    if (!sprite.texture) {
-        printf("Failed to create texture: %s\n", SDL_GetError());
-        SDL_FreeSurface(temp_surface);
-        return sprite;
-    }
-
-    // Fill in sprite struct
-    sprite.width = temp_surface->w;
-    sprite.height = temp_surface->h;
-
-    // Free the temporary surface
-    SDL_FreeSurface(temp_surface);
-
-    return sprite;
-}
-
 typedef struct {
     ecs_world_t* world;
     ecs_entity_t root;
@@ -1083,7 +1176,7 @@ ecs_entity_t lambda_function(lambda_parameters* params)
         int children_count = get_children_count(world, root);
         bool has_children = children_count > 0;
         
-        ecs_set(world, ebox, SceneGraph, {prev, NULL, true, true, true, true, children_count, count});
+        ecs_set(world, ebox, SceneGraph, {prev, NULL, true, true, true, true, children_count, count, depth});
 
         log_trace("%s\n", path);
         Text* text = ecs_get_mut(world, ebox, Text);
@@ -1122,6 +1215,7 @@ ecs_entity_t lambda_function(lambda_parameters* params)
             Sprite sprite = loadSprite(sdlinterface->renderer, "../res/arrow_down.png");
             ecs_set(world, arrow, Sprite, {sprite.texture, sprite.width, sprite.height});
             ecs_set(world, arrow, Renderable, {1500, true});
+            ecs_set(world, arrow, ArrowStatus, {EXPANDED});
             ecs_set(world, ebox, Line, {-11, 16, -11, 16 + children_count*12-8});
         } else
         {
@@ -1255,6 +1349,7 @@ int main(int argc, char *argv[]) {
     ECS_META_COMPONENT(world, Transform);
     ECS_META_COMPONENT(world, Movable);
     ECS_META_COMPONENT(world, Color);
+    ECS_META_COMPONENT(world, ScopeIndicator);
     ECS_META_COMPONENT(world, EventMouseClick);
     ECS_META_COMPONENT(world, Stats);
     ECS_META_COMPONENT(world, ConsumeEvent);
@@ -1272,6 +1367,7 @@ int main(int argc, char *argv[]) {
     ECS_META_COMPONENT(world, Line);
     ECS_META_COMPONENT(world, BoxMode);
     ECS_META_COMPONENT(world, Box);
+    ECS_META_COMPONENT(world, ArrowStatus);
 
     ECS_COMPONENT_DEFINE(world, TestNormal);
     ECS_COMPONENT_DEFINE(world, Font);
@@ -1413,6 +1509,8 @@ int main(int argc, char *argv[]) {
     ECS_SYSTEM(world, ToggleSceneGraphHierarchy, EcsOnUpdate, [inout] SceneGraph(parent), Selected, EventKeyInput(input));
     ECS_SYSTEM(world, KeyNavSceneGraph, EcsOnUpdate, SceneGraph(parent), Selected, EventKeyInput(input));
     ECS_SYSTEM(world, MouseWheelNavSceneGraph, EcsOnUpdate, SceneGraph(parent), Selected, EventMouseWheel(input));
+    ECS_SYSTEM(world, UpdateArrowDirection, EcsPostUpdate, SceneGraph(parent), (Position, Local), Sprite, ArrowStatus, SDL_Interface(sdl));
+    ECS_SYSTEM(world, UpdateSceneGraphLines, EcsPostUpdate, SceneGraph);
 
     // ecs_system(world, {
     //     .entity = ecs_entity(world, {
@@ -1476,11 +1574,15 @@ int main(int argc, char *argv[]) {
             {
                 char* n = ecs_get_name(sc_it.world, sc_it.entities[i]);
                 // printf("%d %s %d\n", sc[i].is_expanded, n, visible_index);
-                if (sc[i].is_expanded || (sc_parent && !sc_parent->is_expanded && !sc[i].user_mark_expanded))
+                if (sc[i].is_expanded)
                 {
                     visible_index++;
+                    p[i].y = (visible_index-1)*12.0f-2; // TODO: Better padding config
+                } else
+                {
+                    // Hide/disable
+                    p[i].y = -10000;
                 }
-                p[i].y = (visible_index-1)*12.0f-2; // TODO: Better padding config
             }
         }
     }
