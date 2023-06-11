@@ -43,6 +43,26 @@ ECS_STRUCT(Line, {
     int32_t y2;
 });
 
+ECS_STRUCT(Color, {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    uint8_t a;
+});
+
+ECS_ENUM(BoxMode, {
+    FILL, OUTLINE
+});
+
+ECS_STRUCT(Box, {
+    int32_t x;
+    int32_t y;
+    int32_t w;
+    int32_t h;
+    BoxMode mode;
+    Color color;
+});
+
 // TODO: Replace transform with (Position, World)/(Position, Local) pairs!
 
 ECS_TAG_DECLARE(World);
@@ -69,19 +89,10 @@ typedef struct TestNormal {
 } TestNormal;
 ECS_COMPONENT_DECLARE(TestNormal);
 
-
-// ECS_STRUCT(Sprite, {
-//     SDL_Texture* texture;
-//     int32_t width;
-//     int32_t height;
-//     bool visible;
-// });
-
 typedef struct Sprite {
     SDL_Texture* texture;
     int32_t width;
     int32_t height;
-    bool visible;
 } Sprite;
 ECS_COMPONENT_DECLARE(Sprite);
 
@@ -146,13 +157,13 @@ ECS_STRUCT(ConsumeEvent, {
     bool mock;
 });
 
+
 ECS_STRUCT(Text, {
-    char str[256];
+    char str[256]; // https://github.com/SanderMertens/flecs/blob/master/examples/c/entities/hooks/src/main.c
     SDL_Surface *surface;
     SDL_Texture *texture;
     int32_t changed;
 });
-
 
 ECS_STRUCT(Textbox, {
     int32_t cursorPosition;
@@ -171,61 +182,7 @@ typedef struct SDL_Interface
 } SDL_Interface;
 ECS_COMPONENT_DECLARE(SDL_Interface);
 
-void Render(ecs_iter_t *it) {
-    Position *p = ecs_field(it, Position, 1);
-    Sprite *s = ecs_field(it, Sprite, 2);
-    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 3);
-
-
-    for (int i = 0; i < it->count; i++) {
-        SDL_Rect dst;
-        dst.x = (int)p[i].x;
-        dst.y = (int)p[i].y;
-        dst.w = s[i].width;
-        dst.h = s[i].height;
-        SDL_RenderCopy(sdl->renderer, s[i].texture, NULL, &dst);
-    }
-}
-
-void RenderBox(ecs_iter_t *it) {
-    Position *p = ecs_field(it, Position, 1);
-    Text* t = ecs_field(it, Text, 2);
-    SceneGraph* sc = ecs_field(it, SceneGraph, 3);
-    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 4);
-
-    for (int i = 0; i < it->count; i++) 
-    {
-        // create SDL_Rect for the box around the text
-        SDL_Rect rect;
-        // rect.x = p[i].x - 2; // subtract padding from position
-        // rect.y = p[i].y + 2; // subtract padding from position
-        // if (t[i].surface)
-        // {
-        //     rect.w = t[i].surface->w + 4; // add twice the padding to the width
-        //     rect.h = t[i].surface->h - 1; // add twice the padding to the height
-        // } else
-        // {
-        //     rect.w = 0;
-        //     rect.h = 0;
-        // }
-
-        rect.x = 0;
-        rect.y = p[i].y + 2;
-        rect.w = p[i].x + t[i].surface->w + 2;
-        rect.h = t[i].surface->h - 1; // add twice the padding to the height
-
-        // enable blending
-        SDL_SetRenderDrawBlendMode(sdl->renderer, SDL_BLENDMODE_BLEND);
-
-        // set color to white with alpha for the filled box
-        SDL_SetRenderDrawColor(sdl->renderer, 0, 0, 0, 200); // alpha set to 128 for semi-transparency
-
-        // draw the filled box
-        SDL_RenderFillRect(sdl->renderer, &rect);
-    }
-
-}
-
+// Rather than 'Selected' being a tag, it can be a prefab?
 void RenderSelectedBox(ecs_iter_t *it) {
     Position *p = ecs_field(it, Position, 1);
     Text* t = ecs_field(it, Text, 2);
@@ -530,6 +487,7 @@ void TextboxCursorBlink(ecs_iter_t* it) {
 
 void ToggleSceneGraphHierarchy(ecs_iter_t* it)
 {
+    printf("ToggleSceneGraphHierarchy\n");
     SceneGraph* sc = ecs_field(it, SceneGraph, 1);
     EventKeyInput* event = ecs_field(it, EventKeyInput, 3);
     for (int32_t i = 0; i < it->count; i++)
@@ -538,7 +496,7 @@ void ToggleSceneGraphHierarchy(ecs_iter_t* it)
         if (event->keycode == SDLK_a || event->keycode == SDLK_LEFT)
         {
             // Retract
-            sc[i].user_mark_expanded = false;
+            sc->user_mark_expanded = false;
             change = true;
             // TODO: Propagate to children...
             
@@ -546,7 +504,7 @@ void ToggleSceneGraphHierarchy(ecs_iter_t* it)
         else if (event->keycode == SDLK_d || event->keycode == SDLK_RIGHT)
         {
             // Expand
-            sc[i].user_mark_expanded = true;
+            sc->user_mark_expanded = true;
             change = true;
         }
         // TODO Is this more efficient than a cascade system and extra memory??
@@ -601,20 +559,7 @@ void GenTextTexture(ecs_iter_t* it)
     }
 }
 
-void RenderLines(ecs_iter_t* it)
-{
-    Position* p = ecs_field(it, Position, 1);
-    Line* l = ecs_field(it, Line, 2);
-    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 3);
-
-    for (int i = 0; i < it->count; i++)
-    {
-        SDL_SetRenderDrawColor(sdl->renderer, 96, 96, 96, 255);
-        SDL_RenderDrawLine(sdl->renderer, p[i].x + l[i].x1, p[i].y + l[i].y1, p[i].x +  l[i].x2, p[i].y + l[i].y2);
-    }
-}
-
-void RenderText(ecs_iter_t *it) {
+void UpdateTextSurface(ecs_iter_t *it) {
     Position* p = ecs_field(it, Position, 1);
     Text *text = ecs_field(it, Text, 2);
     Font *font = ecs_field(it, Font, 3);
@@ -640,14 +585,23 @@ void RenderText(ecs_iter_t *it) {
                 text[i].texture = SDL_CreateTextureFromSurface(sdl->renderer, text[i].surface);
                 text[i].changed = 0;  // Mark text as unchanged
             }
-
-            SDL_Rect dst;
-            dst.x = (int)p[i].x;
-            dst.y = (int)p[i].y;
-            SDL_QueryTexture(text[i].texture, NULL, NULL, &dst.w, &dst.h);  // Get the width and height from the texture
-            // printf("%d, %d\n", dst.w, dst.h);
-            SDL_RenderCopy(sdl->renderer, text[i].texture, NULL, &dst);
         }
+    }
+}
+
+void SetupSelectedNodeIndicator(ecs_iter_t* it)
+{
+    Box* b = ecs_field(it, Box, 2);
+    SceneGraph* sc = ecs_field(it, SceneGraph, 3);
+    Text* text = ecs_field(it, Text, 4);
+
+    for (int i = 0; i < it->count; i++)
+    {
+        int txtWidth = 0;
+        int txtHeight = 0;
+        SDL_QueryTexture(text->texture, NULL, NULL, &txtWidth, &txtHeight);
+        b[i].w = txtWidth+4;
+        b[i].h = txtHeight-1;
     }
 }
 
@@ -662,8 +616,7 @@ void KeyNavSceneGraph(ecs_iter_t* it)
         for (int i = 0; i < it->count; i ++) {
             if (ecs_is_valid(it->world, sc[i].next))
             {
-                ecs_remove(it->world, it->entities[i], Selected);
-                ecs_add(it->world, sc[i].next, Selected);
+                ecs_add_pair(it->world, it->entities[i], EcsChildOf, sc[i].next);
             } else
             {
                 printf("%s next is not valid\n", ecs_get_name(it->world, it->entities[i]));
@@ -674,11 +627,10 @@ void KeyNavSceneGraph(ecs_iter_t* it)
         for (int i = 0; i < it->count; i ++) {
             if (ecs_is_valid(it->world, sc[i].prev))
             {
-                ecs_remove(it->world, it->entities[i], Selected);
-                ecs_add(it->world, sc[i].prev, Selected);
+                ecs_add_pair(it->world, it->entities[i], EcsChildOf, sc[i].prev);
             } else
             {
-                printf("%s next is not valid\n", ecs_get_name(it->world, it->entities[i]));
+                printf("%s prev is not valid\n", ecs_get_name(it->world, it->entities[i]));
             }
         }
     }
@@ -695,10 +647,8 @@ void MouseWheelNavSceneGraph(ecs_iter_t* it)
         {
             if (ecs_is_valid(it->world, sc[i].next))
             {
-                ecs_remove(it->world, it->entities[i], Selected);
-                ecs_add(it->world, sc[i].next, Selected);
-            }
-            else
+                ecs_add_pair(it->world, it->entities[i], EcsChildOf, sc[i].next);
+            } else
             {
                 printf("%s next is not valid\n", ecs_get_name(it->world, it->entities[i]));
             }
@@ -710,12 +660,76 @@ void MouseWheelNavSceneGraph(ecs_iter_t* it)
         {
             if (ecs_is_valid(it->world, sc[i].prev))
             {
-                ecs_remove(it->world, it->entities[i], Selected);
-                ecs_add(it->world, sc[i].prev, Selected);
-            }
-            else
+                ecs_add_pair(it->world, it->entities[i], EcsChildOf, sc[i].prev);
+            } else
             {
                 printf("%s prev is not valid\n", ecs_get_name(it->world, it->entities[i]));
+            }
+        }
+    }
+}
+
+void RenderCommander(ecs_iter_t* it)
+{
+    // printf("Render COMMANDER!\n");
+    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 7);
+    Position* p = ecs_field(it, Position, 1);
+    Renderable* renderable = ecs_field(it, Renderable, 2);
+
+    // Optional
+    Sprite* s = ecs_field(it, Sprite, 3);
+    Text* text = ecs_field(it, Text, 4);
+    Line* l = ecs_field(it, Line, 5);
+    Box* box = ecs_field(it, Box, 6);
+
+    if (s)
+    {
+        for (int i = 0; i < it->count; i++) {
+            SDL_Rect dst;
+            dst.x = (int)p[i].x;
+            dst.y = (int)p[i].y;
+            dst.w = s[i].width;
+            dst.h = s[i].height;
+            SDL_RenderCopy(sdl->renderer, s[i].texture, NULL, &dst);
+        }
+    }
+    if (text)
+    {        
+        for (int i = 0; i < it->count; i++) {
+            SDL_Rect dst;
+            dst.x = (int)p[i].x;
+            dst.y = (int)p[i].y;
+            SDL_QueryTexture(text[i].texture, NULL, NULL, &dst.w, &dst.h);  // Get the width and height from the texture
+            // printf("%d, %d\n", dst.w, dst.h);
+            SDL_RenderCopy(sdl->renderer, text[i].texture, NULL, &dst);
+        }
+    }
+    if (l)
+    {
+        for (int i = 0; i < it->count; i++)
+        {
+            SDL_SetRenderDrawColor(sdl->renderer, 96, 96, 96, 255);
+            SDL_RenderDrawLine(sdl->renderer, p[i].x + l[i].x1, p[i].y + l[i].y1, p[i].x +  l[i].x2, p[i].y + l[i].y2);
+        }
+    }
+    if (box)
+    {
+        for (int i = 0; i < it->count; i++) {
+            SDL_Rect rect;
+            rect.x = (int)p[i].x + box[i].x;
+            rect.y = (int)p[i].y + box[i].y;
+            rect.w = box[i].w;
+            rect.h = box[i].h;
+            // enable blending
+            SDL_SetRenderDrawBlendMode(sdl->renderer, SDL_BLENDMODE_BLEND);
+            // set color to white with alpha for the filled box
+            SDL_SetRenderDrawColor(sdl->renderer, box[i].color.r, box[i].color.g, box[i].color.b, box[i].color.a);
+            if (box[i].mode == FILL)
+            {
+                SDL_RenderFillRect(sdl->renderer, &rect);
+            } else
+            {
+                SDL_RenderDrawRect(sdl->renderer, &rect);
             }
         }
     }
@@ -917,7 +931,8 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, 
                         continue;
                     }
 
-                    ecs_set(world, e, Sprite, {texture, cel->w, cel->h, true});
+                    ecs_set(world, e, Sprite, {texture, cel->w, cel->h});
+                    ecs_set(world, e, Renderable, {i, true});
 
                     if (hasNamedParent(cel->layer, "agents")) {
                         // makeAgent(cel->layer->name, world, e);
@@ -970,7 +985,6 @@ Sprite loadSprite(SDL_Renderer* renderer, char* file_path) {
     // Fill in sprite struct
     sprite.width = temp_surface->w;
     sprite.height = temp_surface->h;
-    sprite.visible = true;
 
     // Free the temporary surface
     SDL_FreeSurface(temp_surface);
@@ -1006,6 +1020,13 @@ ecs_entity_t lambda_function(lambda_parameters* params)
     int count = params->count;
     ecs_entity_t prev = params->prev;
 
+    ecs_entity_t SelectedNode = ecs_new_prefab(world, "selected_node_prefab");
+    ecs_set(world, SelectedNode, Renderable, {2000, true});
+    ecs_set_pair(world, SelectedNode, Position, World, {0, 0});
+    ecs_set_pair(world, SelectedNode, Position, Local, {-2, 2});
+    ecs_set(world, SelectedNode, Box, {0, 0, 0, 0, OUTLINE, {255, 255, 255, 255}});
+    ecs_add(world, SelectedNode, Selected);
+
     char* root_name = ecs_get_name(world, root);
     char entityName[256];
     snprintf(entityName, sizeof(entityName), "%s_%s", root_name, "node");
@@ -1015,11 +1036,6 @@ ecs_entity_t lambda_function(lambda_parameters* params)
         char* s = ecs_get_name(world, root);
         ecs_entity_t ebox = ecs_set_name(world, 0, entityName);
         ecs_add_pair(world, ebox, Symbol, root);
-        if (count == 1)
-        {
-            ecs_add(world, ebox, Selected);
-            printf("Selected added to %s\n", ecs_get_name(world, root));
-        }
         ecs_set(world, ebox, Text, {*s, NULL, NULL, 1});
         char* path = ecs_get_fullpath(world, root);
         // ecs_set(world, ebox, Transform, {0.0f, 0.0f, depth*8.0f, count*12.0f});
@@ -1036,21 +1052,37 @@ ecs_entity_t lambda_function(lambda_parameters* params)
         strcat(text->str, s);
         ecs_os_free(path);
 
-        ecs_set(world, ebox, Renderable, {0, true});
+        ecs_set(world, ebox, Renderable, {10000, true});
+        
+        if (count == 1)
+        {
+            ecs_entity_t selectedInst = ecs_new_entity(world, "selected_node");
+            ecs_add_pair(world, selectedInst, EcsIsA, SelectedNode);
+            ecs_add_pair(world, selectedInst, EcsChildOf, ebox);
+            printf("Selected added to %s\n", ecs_get_name(world, root));
+        }
+
+        text = ecs_get_mut(world, ebox, Text);
+        int txtWidth = 0;
+        int txtHeight = 0;
+        SDL_QueryTexture(text->texture, NULL, NULL, &txtWidth, &txtHeight);
+
+        int ebox_start_x = start_x;
         if (has_children)
         {
-            ecs_set_pair(world, ebox, Position, World, {start_x+11, start_y});
-            ecs_entity_t arrow = ecs_new(world, 0);
-            text = ecs_get_mut(world, ebox, Text);
-            int txtWidth = 0;
-            SDL_QueryTexture(text->texture, NULL, NULL, &txtWidth, NULL);
+            ebox_start_x += 11;
+            ecs_set_pair(world, ebox, Position, World, {ebox_start_x, start_y});
 
+            ecs_entity_t arrow = ecs_new(world, 0);
             // ecs_set_pair(world, arrow, Position, World, {start_x + txtWidth+5.0f, start_y+6});
-            ecs_set_pair(world, arrow, Position, World, {start_x-2 , start_y+6});
+            ecs_set_pair(world, arrow, Position, World, {0, 0});
+            ecs_set_pair(world, arrow, Position, Local, {-11 , 6});
+            ecs_add_pair(world, arrow, EcsChildOf, ebox);
             ecs_entity_t sdl = ecs_lookup(world, "sdl");
             SDL_Interface* sdlinterface = ecs_get_mut(world, sdl, SDL_Interface);
             Sprite sprite = loadSprite(sdlinterface->renderer, "../res/arrow_down.png");
-            ecs_set(world, arrow, Sprite, {sprite.texture, sprite.width, sprite.height, sprite.visible});
+            ecs_set(world, arrow, Sprite, {sprite.texture, sprite.width, sprite.height});
+            ecs_set(world, arrow, Renderable, {1500, true});
             ecs_set(world, ebox, Line, {-11, 16, -11, 16 + children_count*12-8});
         } else
         {
@@ -1058,12 +1090,28 @@ ecs_entity_t lambda_function(lambda_parameters* params)
             ecs_set(world, ebox, Line, {-8, 8, -4, 8});
         }
 
-        // printf("%s\n", ecs_get_name(it.world, it.entities[i]));
+        ecs_entity_t background = ecs_new(world, 0);
+        ecs_set(world, background, Renderable, {1000, true});
+        ecs_set_pair(world, background, Position, World, {0, 0});
+        // For direct highlight
+        // if (has_children)
+        // {
+        //     ecs_set(world, background, Box, {0, 2, txtWidth + 16, txtHeight - 1});
+        //     ecs_set_pair(world, background, Position, Local, {-14, 0});
+        // } else
+        // {
+        //     ecs_set(world, background, Box, {0, 2, txtWidth + 2, txtHeight - 1});
+        //     ecs_set_pair(world, background, Position, Local, {0, 0});   
+        // }
+        ecs_set(world, background, Box, {0, 2, ebox_start_x+txtWidth + 2, txtHeight - 1, FILL, {0, 0, 0, 200}}); // 
+        ecs_set_pair(world, background, Position, Local, {-ebox_start_x, 0});   
+        ecs_add_pair(world, background, EcsChildOf, ebox);
+        // printf("%s\n", ecs_get_name(world, root));
         // char* str = ecs_entity_to_json(world, root, &(ecs_entity_to_json_desc_t) {
         //     .serialize_path = true,
         //     .serialize_values = true
         // });
-        // log_trace("ent = %s\n", str);
+        // printf("ent = %s\n", str);
         // ecs_os_free(str);
 
 
@@ -1137,6 +1185,17 @@ ecs_entity_t create_ui_element(ecs_world_t *world, const char *name) {
     return e;
 }
 
+int compare_z_index(
+    ecs_entity_t e1,
+    const Renderable *r1,
+    ecs_entity_t e2,
+    const Renderable *r2)
+{
+    (void)e1;
+    (void)e2;
+    return (r1->z_index > r2->z_index) - (r1->z_index < r2->z_index);
+}
+
 int main(int argc, char *argv[]) {
     log_set_quiet(true);
     ecs_world_t *world = ecs_init();
@@ -1145,6 +1204,7 @@ int main(int argc, char *argv[]) {
 
     ECS_META_COMPONENT(world, Transform);
     ECS_META_COMPONENT(world, Movable);
+    ECS_META_COMPONENT(world, Color);
     ECS_META_COMPONENT(world, EventMouseClick);
     ECS_META_COMPONENT(world, Stats);
     ECS_META_COMPONENT(world, ConsumeEvent);
@@ -1160,6 +1220,8 @@ int main(int argc, char *argv[]) {
     ECS_META_COMPONENT(world, SceneGraph);
     ECS_META_COMPONENT(world, Renderable);
     ECS_META_COMPONENT(world, Line);
+    ECS_META_COMPONENT(world, BoxMode);
+    ECS_META_COMPONENT(world, Box);
 
     ECS_COMPONENT_DEFINE(world, TestNormal);
     ECS_COMPONENT_DEFINE(world, Font);
@@ -1258,7 +1320,7 @@ int main(int argc, char *argv[]) {
         }
     }
     
-
+    ECS_SYSTEM(world, SetupSelectedNodeIndicator, EcsPostUpdate, Selected, Box, SceneGraph(parent), Text(parent));
     ECS_SYSTEM(world, MouseMovableSelection, EcsPostUpdate, Movable(parent), Transform(parent), Transform, Sprite, EventMouseClick(input));
     ECS_SYSTEM(world, MouseMoveGrabbed, EcsPostUpdate, Movable, Transform, EventMouseMotion(input));
     ECS_SYSTEM(world, Input, EcsPreUpdate, [inout] *());
@@ -1286,18 +1348,37 @@ int main(int argc, char *argv[]) {
     ECS_SYSTEM(world, TextboxEntry, EcsOnUpdate, Textbox, Text, EventTextInput(input));
     ECS_SYSTEM(world, HandleBackspace, EcsOnUpdate, Textbox, Text, EventKeyInput(input));
 
-    ECS_SYSTEM(world, ToggleSceneGraphHierarchy, EcsOnUpdate, SceneGraph, Selected, EventKeyInput(input), [inout] *());
-    ECS_SYSTEM(world, KeyNavSceneGraph, EcsOnUpdate, SceneGraph, Selected, EventKeyInput(input));
+    ECS_SYSTEM(world, ToggleSceneGraphHierarchy, EcsOnUpdate, [inout] SceneGraph(parent), Selected, EventKeyInput(input));
+    ECS_SYSTEM(world, KeyNavSceneGraph, EcsOnUpdate, SceneGraph(parent), Selected, EventKeyInput(input));
     ECS_SYSTEM(world, MouseWheelNavSceneGraph, EcsOnUpdate, SceneGraph, Selected, EventMouseWheel(input));
 
     ECS_SYSTEM(world, TextboxClick, EcsOnUpdate, Textbox, Position, Size, EventMouseClick(input));
     ECS_SYSTEM(world, TextboxCursorBlink, EcsOnUpdate, Textbox, Cursor);
 
-    ECS_SYSTEM(world, Render, EcsPostFrame, (Position, World), Sprite, SDL_Interface(sdl));
-    ECS_SYSTEM(world, RenderBox, EcsPostFrame, (Position, World), Text, SceneGraph, SDL_Interface(sdl));
-    ECS_SYSTEM(world, RenderSelectedBox, EcsPostFrame, (Position, World), Text, SceneGraph, Selected, SDL_Interface(sdl));
-    ECS_SYSTEM(world, RenderText, EcsPostFrame, (Position, World), Text, Font(resource), ?Renderable, SDL_Interface(sdl));
-    ECS_SYSTEM(world, RenderLines, EcsPostFrame, (Position, World), Line, SDL_Interface(sdl));
+    // ECS_SYSTEM(world, Render, EcsPostFrame, (Position, World), Sprite, SDL_Interface(sdl));
+    ECS_SYSTEM(world, UpdateTextSurface, EcsPreFrame, (Position, World), Text, Font(resource), ?Renderable, SDL_Interface(sdl));
+    ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "RenderCommander",
+            .add = { ecs_dependson(EcsPostFrame) }
+        }),
+        .query = {
+            .filter.expr = "(Position, World), Renderable, ?Sprite, ?Text, ?Line, ?Box, SDL_Interface(sdl)",
+            // .filter.terms = {
+            //     {.id = ecs_id(SDL_Interface), .entity = ecs_id(sdl) },
+            //     {.id = ecs_id(Renderable) },
+            //     {.id = ecs_id(Sprite), .oper = EcsOptional },
+            //     {.id = ecs_id(Text), .oper = EcsOptional },
+            //     {.id = ecs_id(Line), .oper = EcsOptional },
+            //     {.id = ecs_id(Box), .oper = EcsOptional },
+            // },
+            .order_by = (ecs_order_by_action_t)compare_z_index,
+            .order_by_component = ecs_id(Renderable)
+        },
+        .callback = RenderCommander
+    });
+    // ECS_SYSTEM(world, RenderBox, EcsPostFrame, (Position, World), Text, SceneGraph, SDL_Interface(sdl));
+    // ECS_SYSTEM(world, RenderSelectedBox, EcsPostFrame, (Position, World), Text, SceneGraph, Selected, SDL_Interface(sdl));
     ECS_SYSTEM(world, RenderPresent, EcsPostFrame, SDL_Interface);
     
 
