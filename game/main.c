@@ -15,6 +15,7 @@ ECS_STRUCT(Test, {
 
 ECS_STRUCT(SceneGraph,
 {
+    ecs_entity_t symbol;
     ecs_entity_t prev; // TODO: These should probably be refactored to relationship pairs
     ecs_entity_t next;
     bool user_mark_visible;
@@ -369,7 +370,7 @@ void SceneGraphSettingsCascadeHierarchy(ecs_iter_t *it) {
     {
         if (sc_parent)
         {
-            // printf("%s's parent is %d expanded\n", ecs_get_name(it->world, it->entities[i]), sc_parent->is_expanded);
+            log_trace("%s's parent is %d expanded\n", ecs_get_name(it->world, it->entities[i]), sc_parent->is_expanded);
             if (!sc[i].user_mark_expanded)
             {
                 if (sc_parent->user_mark_expanded == false)
@@ -605,7 +606,6 @@ void UpdateSceneGraphLines(ecs_iter_t* it)
             }
             if (ecs_is_valid(it->world, it->entities[i]))
             {
-                printf("Update lines!\n");
                 if (expanded_children_count == 0)
                 {
                     ecs_remove(it->world, it->entities[i], Line);
@@ -624,37 +624,17 @@ void ToggleSceneGraphHierarchy(ecs_iter_t* it)
     EventKeyInput* event = ecs_field(it, EventKeyInput, 3);
     for (int32_t i = 0; i < it->count; i++)
     {
-        bool change = false;
         if (event->keycode == SDLK_a || event->keycode == SDLK_LEFT)
         {
             // Retract
             sc->user_mark_expanded = false;
-            change = true;
-            // TODO: Propagate to children...
             
         }
         else if (event->keycode == SDLK_d || event->keycode == SDLK_RIGHT)
         {
             // Expand
             sc->user_mark_expanded = true;
-            change = true;
         }
-        // TODO Is this more efficient than a cascade system and extra memory??
-        // if (change)
-        // {
-        //     printf("Toggle %s\n", ecs_get_name(it->world, it->entities[i]));
-        //     ecs_iter_t it_c = ecs_children(it->world, it->world);
-        //     while (ecs_children_next(&it_c)) {
-        //         printf("Child\n");
-        //         for (int c = 0; c < it_c.count; c++)
-        //         {
-        //             ecs_entity_t child = it_c.entities[i];
-        //             SceneGraph* csg = ecs_get_mut(it->world, child, SceneGraph);
-        //             csg->expanded = sc[i].expanded;
-        //             printf("Expand\n");
-        //         }
-        //     }
-        // }
     }
 }
 
@@ -809,23 +789,6 @@ void MouseWheelNavSceneGraph(ecs_iter_t* it)
     }
 }
 
-void UpdateSceneGraphLayout(ecs_iter_t* it)
-{
-    Position* p = ecs_field(it, Position, 1);
-    SceneGraph* sc = ecs_field(it, SceneGraph, 2);
-
-    int visible_index = 0;
-    for (int i = 0; i < it->count; i++)
-    {
-        visible_index++;
-        printf("VI %d\n", visible_index);
-        // if (sc[i].is_expanded)
-        // {
-        // }
-        p[i].y = (sc[i].index-1)*12.0f-2; // TODO: Better padding config
-    }
-}
-
 void RenderCommander(ecs_iter_t* it)
 {
     // printf("Render COMMANDER!\n");
@@ -865,8 +828,8 @@ void RenderCommander(ecs_iter_t* it)
     {
         for (int i = 0; i < it->count; i++)
         {
-            // SDL_SetRenderDrawColor(sdl->renderer, 96, 96, 96, 255);
-            SDL_SetRenderDrawColor(sdl->renderer, 255, 0, 0, 255);
+            SDL_SetRenderDrawColor(sdl->renderer, 128, 128, 128, 255);
+            // SDL_SetRenderDrawColor(sdl->renderer, 255, 0, 0, 255);
             SDL_RenderDrawLine(sdl->renderer, p[i].x + l[i].x1, p[i].y + l[i].y1, p[i].x +  l[i].x2, p[i].y + l[i].y2);
         }
         SDL_SetRenderDrawColor(sdl->renderer, 0, 0, 0, 255);
@@ -936,28 +899,6 @@ bool isLayerVisible(Layer* layer) {
     return layer->visible && isLayerVisible(layer->parent);
 }
 
-void makeAgent(const char* name, ecs_world_t* world, ecs_entity_t e)
-{
-        // Set common Agent attributes
-    // Define the Agent prefab
-    // ECS_PREFAB(world, prefab, Transform, Movable);
-    // ecs_set(world, prefab, Movable, {false});
-    // TODO: Figure out how to make an instance of the prefab
-    // ecs_entity_t ai = ecs_new_w_pair(world, EcsIsA, prefab);
-    ecs_entity_t ai = ecs_set_name(world, 0, strcat(name, "_agent"));
-    // TODO: If the layer has a parent
-    ecs_add(world, ai, Position);
-    ecs_set(world, ai, Movable, {false});
-    // Set specific Agent attributes
-    // ecs_set(world, ai, Agent, {"agent"});
-    ecs_set(world, ai, Stats, {0, 0});
-    ecs_add_pair(world, e, EcsChildOf, ai);
-    ecs_entity_t agents = ecs_lookup(world, "agents");
-    if (ecs_is_valid(world, agents))
-    {
-        ecs_add_pair(world, ai, EcsChildOf, agents);
-    }
-}
 
 void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, SDL_Renderer* renderer) {
 
@@ -991,9 +932,6 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, 
             ase_layer_t* layer = ase->layers + i;
             if (layer->type == ASE_LAYER_TYPE_GROUP)
             {
-                // char* copy;
-                // copy = (char*)malloc((strlen(layer->name) + 1) * sizeof(char));
-                // strcpy(copy, layer->name);
                 ecs_entity_t e = ecs_set_name(world, 0, layer->name);
                 ecs_set_pair(world, e, Position, World, {0, 0});
                 
@@ -1003,16 +941,12 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, 
                 } else {
                     log_trace("CREATE GROUP: %s NO PARENT LAYER\n", layer->name);
                 }
-                if (hasNamedParent(layer, "agents")) {
-                    // TODO: This messes up layers parenting too unfortunately....
-                    // makeAgent(layer->name, world, e);
-                }
+                // if (hasNamedParent(layer, "agents")) {
+                //     // TODO: This messes up layers parenting too unfortunately....
+                //     makeAgent(layer->name, world, e);
+                // }
             }
         }
-
-        // TODO: Layer parents are correct until group hierarchy is created
-        // WHY???
-        // Hierarchy the group layers
 
         for (int i = 0; i < ase->layer_count; ++i) 
         {
@@ -1029,11 +963,9 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, 
                     ecs_entity_t parent_entity = ecs_lookup(world, layer->parent->name);
                     if (ecs_is_valid(world, parent_entity) && ecs_is_alive(world, parent_entity)) 
                     {
-                        // TODO: Hierarchy groups causes sprites in subfolders to not render if not done last??
                         log_trace("GROUP HIERARCHY: %s child of %s\n", ecs_get_name(world, e),ecs_get_name(world, parent_entity));
                         parents[i] = parent_entity;
                         has_parent[i] = true;
-                        // ecs_add_pair(world, e, EcsChildOf, parent_entity);
                     }
                 }
             }
@@ -1050,7 +982,6 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, 
             {
                 c++;
                 new_cel = true;
-                // current_parent = layer;
             }
             log_trace("CEL %s vs LAYER %s\n", cel->layer->name, layer->name);
             char entityName[256];
@@ -1066,16 +997,13 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, 
                     if (parent_entity) 
                     {
                         log_trace("CEL LAYER: %s child of %s\n", ecs_get_name(world, e), ecs_get_name(world, parent_entity));
-                        // ecs_add_pair(world, e, EcsChildOf, parent_entity);
                         parents[i] = parent_entity;
                         has_parent[i] = true;
                     }
                 }
                 if (cel->layer->flags & ASE_LAYER_FLAGS_VISIBLE) // TODO: Check if group parent is visible
                 {
-                    // ecs_set(world, e, Transform, {0, 0, cel->x, cel->y});
                     ecs_set_pair(world, e, Position, World, {0, 0});
-                    // ecs_set_pair(world, e, Position, World, {0, 0});
                     ecs_set_pair(world, e, Position, Local, {cel->x, cel->y});
                     SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, cel->w, cel->h);
                     if (texture == NULL) {
@@ -1094,17 +1022,17 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, 
                     ecs_set(world, e, Sprite, {texture, cel->w, cel->h});
                     ecs_set(world, e, Renderable, {i, true});
 
-                    if (hasNamedParent(cel->layer, "agents")) {
-                        // makeAgent(cel->layer->name, world, e);
-                    } else if (hasNamedAncestor(cel->layer, "agents"))
-                    {
-                        ecs_entity_t agent = ecs_lookup(world, strcat(cel->layer->parent, "_agent"));
-                        if (ecs_is_valid(world, agent))
-                        {
-                            ecs_add_pair(world, e, EcsChildOf, agent);
-                        }
-                        // TODO: Figure out how to call systems with non-parent ancestors
-                    }
+                    // if (hasNamedParent(cel->layer, "agents")) {
+                    //     makeAgent(cel->layer->name, world, e);
+                    // } else if (hasNamedAncestor(cel->layer, "agents"))
+                    // {
+                    //     ecs_entity_t agent = ecs_lookup(world, strcat(cel->layer->parent, "_agent"));
+                    //     if (ecs_is_valid(world, agent))
+                    //     {
+                    //         ecs_add_pair(world, e, EcsChildOf, agent);
+                    //     }
+                    //     // TODO: Figure out how to call systems with non-parent ancestors
+                    // }
                 }
             }   
         }
@@ -1144,6 +1072,101 @@ typedef struct {
     ecs_entity_t* parents;
 } lambda_data;
 
+ecs_entity_t test_node(lambda_parameters* params)
+{
+    ecs_world_t* world = params->world;
+    ecs_entity_t root = params->root;
+    int depth = params->depth;
+    int count = params->count;
+    ecs_entity_t prev = params->prev;
+
+    char* root_name = ecs_get_name(world, root);
+    printf("Root name gather %s\n", root_name);
+}
+
+ecs_entity_t create_node(lambda_parameters* params)
+{
+    ecs_world_t* world = params->world;
+    ecs_entity_t root = params->root;
+    int depth = params->depth;
+    int count = params->count;
+    ecs_entity_t prev = params->prev;
+
+    char* root_name = ecs_get_name(world, root);
+    char entityName[256];
+    snprintf(entityName, sizeof(entityName), "%s_%s", root_name, "node");
+
+    char* s = ecs_get_name(world, root);
+    ecs_entity_t ebox = ecs_set_name(world, 0, entityName);
+    ecs_add_pair(world, ebox, Symbol, root);
+    ecs_set(world, ebox, Text, {*s, NULL, NULL, 1});
+    char* path = ecs_get_fullpath(world, root);
+    int start_x = depth*8.0f;
+    int start_y = (count-1)*12.0f-2;
+    int children_count = get_children_count(world, root);
+    bool has_children = children_count > 0;
+    // TODO: Better padding config
+    ecs_set(world, ebox, SceneGraph, {root, prev, NULL, true, true, true, true, children_count, count, depth});
+
+    log_trace("%s\n", path);
+    Text* text = ecs_get_mut(world, ebox, Text);
+    memset(text->str, 0, sizeof(text->str));
+    strcat(text->str, s);
+    ecs_os_free(path);
+
+    ecs_set(world, ebox, Renderable, {10000, true});
+
+    text = ecs_get_mut(world, ebox, Text);
+    int txtWidth = 0;
+    int txtHeight = 0;
+    SDL_QueryTexture(text->texture, NULL, NULL, &txtWidth, &txtHeight);
+
+    int ebox_start_x = start_x;
+    if (has_children)
+    {
+        ebox_start_x += 11;
+        ecs_set_pair(world, ebox, Position, World, {ebox_start_x, start_y});
+
+        ecs_entity_t arrow = ecs_new(world, 0);
+        // ecs_set_pair(world, arrow, Position, World, {start_x + txtWidth+5.0f, start_y+6});
+        ecs_set_pair(world, arrow, Position, World, {0, 0});
+        ecs_set_pair(world, arrow, Position, Local, {-11 , 6});
+        ecs_add_pair(world, arrow, EcsChildOf, ebox);
+        ecs_entity_t sdl = ecs_lookup(world, "sdl");
+        SDL_Interface* sdlinterface = ecs_get_mut(world, sdl, SDL_Interface);
+        Sprite sprite = loadSprite(sdlinterface->renderer, "../res/arrow_down.png");
+        ecs_set(world, arrow, Sprite, {sprite.texture, sprite.width, sprite.height});
+        ecs_set(world, arrow, Renderable, {1500, true});
+        ecs_set(world, arrow, ArrowStatus, {EXPANDED});
+        ecs_set(world, ebox, Line, {-11, 16, -11, 16 + children_count*12-8});
+    } else
+    {
+        ecs_set_pair(world, ebox, Position, World, {start_x, start_y});
+        ecs_set(world, ebox, Line, {-8, 8, -4, 8});
+    }
+
+    ecs_entity_t background = ecs_new(world, 0);
+    ecs_set(world, background, Renderable, {1000, true});
+    ecs_set_pair(world, background, Position, World, {0, 0});
+    ecs_set(world, background, Box, {0, 2, ebox_start_x+txtWidth + 2, txtHeight - 1, FILL, {0, 0, 0, 200}}); // 
+    ecs_set_pair(world, background, Position, Local, {-ebox_start_x, 0});   
+    ecs_add_pair(world, background, EcsChildOf, ebox);
+
+    if (prev)
+    {
+        // printf("%s has next %s\n", ecs_get_name(world, ebox), ecs_get_name(world, prev));
+        if (prev && ecs_is_alive(world, prev))
+        {
+            SceneGraph* prevNode = ecs_get_mut(world, prev, SceneGraph);
+            prevNode->next = ebox;
+            log_trace("%s has next %s\n", ecs_get_name(world, prev), ecs_get_name(world, ebox));
+            // printf("%s", ecs_get_name(world, root));
+        }
+    }
+
+    return ebox;
+}
+
 ecs_entity_t lambda_function(lambda_parameters* params) 
 {
     ecs_world_t* world = params->world;
@@ -1160,107 +1183,15 @@ ecs_entity_t lambda_function(lambda_parameters* params)
         ecs_set_pair(world, SelectedNode, Position, Local, {-2, 2});
         ecs_set(world, SelectedNode, Box, {0, 0, 0, 0, OUTLINE, {255, 255, 255, 255}});
         ecs_add(world, SelectedNode, Selected);
-
-        char* root_name = ecs_get_name(world, root);
-        char entityName[256];
-        snprintf(entityName, sizeof(entityName), "%s_%s", root_name, "node");
-
-        char* s = ecs_get_name(world, root);
-        ecs_entity_t ebox = ecs_set_name(world, 0, entityName);
-        ecs_add_pair(world, ebox, Symbol, root);
-        ecs_set(world, ebox, Text, {*s, NULL, NULL, 1});
-        char* path = ecs_get_fullpath(world, root);
-        // ecs_set(world, ebox, Transform, {0.0f, 0.0f, depth*8.0f, count*12.0f});
-        int start_x = depth*8.0f;
-        int start_y = (count-1)*12.0f-2;
-        int children_count = get_children_count(world, root);
-        bool has_children = children_count > 0;
-        
-        ecs_set(world, ebox, SceneGraph, {prev, NULL, true, true, true, true, children_count, count, depth});
-
-        log_trace("%s\n", path);
-        Text* text = ecs_get_mut(world, ebox, Text);
-        memset(text->str, 0, sizeof(text->str));
-        strcat(text->str, s);
-        ecs_os_free(path);
-
-        ecs_set(world, ebox, Renderable, {10000, true});
-        
+        ecs_entity_t node = create_node(params);
         if (count == 1)
         {
             ecs_entity_t selectedInst = ecs_new_entity(world, "selected_node");
             ecs_add_pair(world, selectedInst, EcsIsA, SelectedNode);
-            ecs_add_pair(world, selectedInst, EcsChildOf, ebox);
+            ecs_add_pair(world, selectedInst, EcsChildOf, node);
             printf("Selected added to %s\n", ecs_get_name(world, root));
         }
-
-        text = ecs_get_mut(world, ebox, Text);
-        int txtWidth = 0;
-        int txtHeight = 0;
-        SDL_QueryTexture(text->texture, NULL, NULL, &txtWidth, &txtHeight);
-
-        int ebox_start_x = start_x;
-        if (has_children)
-        {
-            ebox_start_x += 11;
-            ecs_set_pair(world, ebox, Position, World, {ebox_start_x, start_y});
-
-            ecs_entity_t arrow = ecs_new(world, 0);
-            // ecs_set_pair(world, arrow, Position, World, {start_x + txtWidth+5.0f, start_y+6});
-            ecs_set_pair(world, arrow, Position, World, {0, 0});
-            ecs_set_pair(world, arrow, Position, Local, {-11 , 6});
-            ecs_add_pair(world, arrow, EcsChildOf, ebox);
-            ecs_entity_t sdl = ecs_lookup(world, "sdl");
-            SDL_Interface* sdlinterface = ecs_get_mut(world, sdl, SDL_Interface);
-            Sprite sprite = loadSprite(sdlinterface->renderer, "../res/arrow_down.png");
-            ecs_set(world, arrow, Sprite, {sprite.texture, sprite.width, sprite.height});
-            ecs_set(world, arrow, Renderable, {1500, true});
-            ecs_set(world, arrow, ArrowStatus, {EXPANDED});
-            ecs_set(world, ebox, Line, {-11, 16, -11, 16 + children_count*12-8});
-        } else
-        {
-            ecs_set_pair(world, ebox, Position, World, {start_x, start_y});
-            ecs_set(world, ebox, Line, {-8, 8, -4, 8});
-        }
-
-        ecs_entity_t background = ecs_new(world, 0);
-        ecs_set(world, background, Renderable, {1000, true});
-        ecs_set_pair(world, background, Position, World, {0, 0});
-        // For direct highlight
-        // if (has_children)
-        // {
-        //     ecs_set(world, background, Box, {0, 2, txtWidth + 16, txtHeight - 1});
-        //     ecs_set_pair(world, background, Position, Local, {-14, 0});
-        // } else
-        // {
-        //     ecs_set(world, background, Box, {0, 2, txtWidth + 2, txtHeight - 1});
-        //     ecs_set_pair(world, background, Position, Local, {0, 0});   
-        // }
-        ecs_set(world, background, Box, {0, 2, ebox_start_x+txtWidth + 2, txtHeight - 1, FILL, {0, 0, 0, 200}}); // 
-        ecs_set_pair(world, background, Position, Local, {-ebox_start_x, 0});   
-        ecs_add_pair(world, background, EcsChildOf, ebox);
-        // printf("%s\n", ecs_get_name(world, root));
-        // char* str = ecs_entity_to_json(world, root, &(ecs_entity_to_json_desc_t) {
-        //     .serialize_path = true,
-        //     .serialize_values = true
-        // });
-        // printf("ent = %s\n", str);
-        // ecs_os_free(str);
-
-
-        if (prev)
-        {
-            // printf("%s has next %s\n", ecs_get_name(world, ebox), ecs_get_name(world, prev));
-            if (prev && ecs_is_alive(world, prev))
-            {
-                SceneGraph* prevNode = ecs_get_mut(world, prev, SceneGraph);
-                prevNode->next = ebox;
-                log_trace("%s has next %s\n", ecs_get_name(world, prev), ecs_get_name(world, ebox));
-                // printf("%s", ecs_get_name(world, root));
-            }
-        }
-
-        return ebox;
+        return node;
     }
     return NULL;
 }
@@ -1474,10 +1405,139 @@ int main(int argc, char *argv[]) {
         if (ecs_is_valid(world, sc_data.nodes[i]) && ecs_is_valid(world, sc_data.parents[i]))
         {
             char* s1 = ecs_get_fullpath(world, sc_data.nodes[i]);
-            printf("Node %s\n", s1);
+            // printf("Node %s\n", s1);
         }
     }
-    
+
+    // TODO: Create agents, auto update SceneGraph nodes
+    // How to create agents?
+    // Two approaches 
+    // 1. Start with SceneGraph nodes and gather entities they represent
+    // 2. Start with entities and then update the SceneGraph automatically when entities are modified...
+    // Multiple SceneGraph user interface widgets, to represent queries, etc. Need to represent components in user interface
+    // Iterate through SceneGraph, get agents nodes
+    // Let's start with approach 1
+    // Start by iterating through agents_node entity
+
+    ecs_entity_t agentsNode = ecs_lookup(world, "agents_node");
+    SceneGraph* agentsSceneGraph = ecs_get_mut(world, agentsNode, SceneGraph);
+    ecs_iter_t agents_it = ecs_children(world, agentsNode);
+    int agent_i = 0;
+    int h_index = 0;
+    ecs_entity_t nodes[100];
+    ecs_entity_t parents[100];
+    while (ecs_children_next(&agents_it)) {
+        for (int i = 0; i < agents_it.count; i++)
+        {
+            ecs_entity_t child = agents_it.entities[i];
+            if (ecs_is_valid(world, child))
+            {
+                // printf("Agent child %s\n", ecs_get_name(agents_it.world, child));
+                SceneGraph* node = ecs_get(world, child, SceneGraph);
+                if (node && ecs_is_valid(world, node->symbol))
+                {
+                    char* agent_name = ecs_get_name(world, node->symbol);
+                    char* name = malloc((strlen(agent_name) + strlen("_agent") + 1) * sizeof(char)); // +1 for the null-terminator
+                    strcpy(name, agent_name);
+                    strcat(name, "_agent");
+                    printf("Agent created %s\n", name);
+                    ecs_entity_t ai = ecs_set_name(world, 0, name);
+                    free(name);
+                    ecs_set_pair(world, ai, Position, World, {0, 0});
+                    ecs_set(world, ai, Movable, {false});
+                    ecs_set(world, ai, Stats, {0, 0});
+
+                    ecs_add_pair(world, ai, EcsChildOf, agentsSceneGraph->symbol);
+                    ecs_add_pair(world, node->symbol, EcsChildOf, ai);
+                    // We need to update the SceneGraph with the new node hierarchy in a way that can
+                    // be reusable for generic updates
+                    // How?
+                    // Let's start by refactoring the code that generates a SceneGraph node to a utiliy function
+                    char* aname = ecs_get_name(world, ai);
+                    printf("Agent name gather %s\n", aname);
+                    lambda_parameters lp = {world, ai, node->depth, node->index, node->prev};
+
+                    // TODO: Check if node hierarchy is correct!
+                    // I don't think it's actually reparenting.....zzzz
+                    ecs_entity_t createdNode = create_node(&lp);
+
+                    if (agent_i == 0)
+                    {
+                        agentsSceneGraph->next = createdNode;
+                    }
+                    SceneGraph* createdSceneGraph = ecs_get_mut(world, createdNode, SceneGraph);
+                    createdSceneGraph->next = child;
+                    node->prev = createdNode; // Update the pushed node to point here
+                    // Now that the node is created...
+                    // Let's update the rest of the graph to account for the changes...
+
+                    // Iterate through all subsequent nodes and increment their index by one
+                    ecs_entity_t e = createdSceneGraph->next;
+                    while (ecs_is_valid(world, e))
+                    {
+                        SceneGraph* sc_next = ecs_get_mut(world, e, SceneGraph);
+                        sc_next->index++;
+                        e = sc_next->next;
+                    }
+                    
+                    printf("Entity %s has depth %d\n", ecs_get_name(world, createdNode), createdSceneGraph->depth);
+
+                    // Increase depth of all children by one
+                    e = createdSceneGraph->next;
+                    int same_depth_count = 0;
+                    while (ecs_is_valid(world, e))
+                    {
+                        SceneGraph* sc_next = ecs_get_mut(world, e, SceneGraph);
+                        printf("Entity %s has depth %d\n", ecs_get_name(world, e), sc_next->depth);
+                        if (sc_next->depth <= createdSceneGraph->depth)
+                        {
+                            same_depth_count++;
+                            if (same_depth_count > 1)
+                            {
+                                break;
+                            }
+                            nodes[h_index] = e;
+                            parents[h_index] = createdNode;
+                            h_index++;
+                        }
+                        sc_next->depth++;
+                        printf("UPDATE Entity %s now has depth %d\n", ecs_get_name(world, e), sc_next->depth);
+                        e = sc_next->next;
+                    }
+
+                    // Increase children_count of all parents by one
+                    e = createdSceneGraph->prev;
+                    int lowest_depth = createdSceneGraph->depth;
+                    ecs_entity_t first_parent = NULL;
+                    while (ecs_is_valid(world, e))
+                    {
+                        SceneGraph* sc_prev = ecs_get_mut(world, e, SceneGraph);
+                        if (sc_prev->depth < lowest_depth)
+                        {
+                            sc_prev->children_count++;
+                            if (!ecs_is_valid(world, first_parent))
+                            {
+                                first_parent = e;
+                                nodes[h_index] = createdNode;
+                                parents[h_index] = first_parent;
+                                h_index++;
+                            }
+                            lowest_depth = sc_prev->depth;
+                            printf("UPDATE Entity %s now has children count %d\n", ecs_get_name(world, e), sc_prev->children_count);
+                        }
+                        e = sc_prev->prev;
+                    }
+                }
+            }
+            agent_i++;
+        }
+    }
+    for (int i = 0; i < h_index; i++)
+    {
+        ecs_add_pair(world, nodes[i], EcsChildOf, parents[i]);
+    }
+
+
     ECS_SYSTEM(world, SetupSelectedNodeIndicator, EcsPostUpdate, Selected, Box, SceneGraph(parent), Text(parent));
     ECS_SYSTEM(world, MouseMovableSelection, EcsPostUpdate, Movable(parent), Transform(parent), Transform, Sprite, EventMouseClick(input));
     ECS_SYSTEM(world, MouseMoveGrabbed, EcsPostUpdate, Movable, Transform, EventMouseMotion(input));
@@ -1512,18 +1572,6 @@ int main(int argc, char *argv[]) {
     ECS_SYSTEM(world, UpdateArrowDirection, EcsPostUpdate, SceneGraph(parent), (Position, Local), Sprite, ArrowStatus, SDL_Interface(sdl));
     ECS_SYSTEM(world, UpdateSceneGraphLines, EcsPostUpdate, SceneGraph);
 
-    // ecs_system(world, {
-    //     .entity = ecs_entity(world, {
-    //         .name = "UpdateSceneGraphLayout",
-    //         .add = { ecs_dependson(EcsOnUpdate) }
-    //     }),
-    //     .query = {
-    //         .filter.expr = "[inout] (Position, World), SceneGraph",
-    //         .order_by = (ecs_order_by_action_t)compare_sc_index,
-    //         .order_by_component = ecs_id(SceneGraph)
-    //     },
-    //     .callback = UpdateSceneGraphLayout
-    // });
 
     ECS_SYSTEM(world, TextboxClick, EcsOnUpdate, Textbox, Position, Size, EventMouseClick(input));
     ECS_SYSTEM(world, TextboxCursorBlink, EcsOnUpdate, Textbox, Cursor);
@@ -1574,6 +1622,11 @@ int main(int argc, char *argv[]) {
             {
                 char* n = ecs_get_name(sc_it.world, sc_it.entities[i]);
                 // printf("%d %s %d\n", sc[i].is_expanded, n, visible_index);
+                p[i].x = sc[i].depth*8.0f;
+                if (sc[i].children_count)
+                {
+                    p[i].x += 11;
+                }
                 if (sc[i].is_expanded)
                 {
                     visible_index++;
@@ -1586,7 +1639,6 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-    // ecs_progress(world, 0);
 
     return ecs_fini(world);
 }
