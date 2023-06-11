@@ -1,8 +1,11 @@
 Progress:
+>Inserting nodes within the existing scene graph ---> DONE
+>Viewer/Editor for selected entity components
+Prefab maker user interface
+System loop
 WYSIWYG builder
 Chatbox for speaking with agent
 Agent dialogue box
 Multiagent conversation
-Prefab user interface
-3D renderer
+3D renderer w Vulkan
 Read LayoutLMv3 paper - make plan to fine tune for layout reading books
