@@ -103,11 +103,6 @@ typedef struct TestNormal {
 } TestNormal;
 ECS_COMPONENT_DECLARE(TestNormal);
 
-typedef struct SceneGraphLayout {
-    int index;
-} SceneGraphLayout;
-ECS_COMPONENT_DECLARE(SceneGraphLayout);
-
 typedef struct Sprite {
     SDL_Texture* texture;
     int32_t width;
@@ -183,6 +178,52 @@ ECS_STRUCT(Text, {
     SDL_Texture *texture;
     int32_t changed;
 });
+
+ECS_STRUCT(Paragraph, {
+    char *str;
+    SDL_Surface *surface;
+    SDL_Texture *texture;
+    int32_t changed;
+    int32_t wrap_width;
+});
+
+ECS_CTOR(Paragraph, ptr, {
+    ecs_trace("Ctor");
+    ptr->str = NULL;
+});
+
+// The destructor should free resources.
+ECS_DTOR(Paragraph, ptr, {
+    ecs_trace("Dtor");
+    ecs_os_free(ptr->str);
+});
+
+// The move hook should move resources from one location to another.
+ECS_MOVE(Paragraph, dst, src, {
+    ecs_trace("Move");
+    ecs_os_free(dst->str);
+    dst->str = src->str;
+    src->str = NULL; // This makes sure the value doesn't get deleted twice,
+                       // as the destructor is still invoked after a move.
+});
+
+// The copy hook should copy resources from one location to another.
+ECS_COPY(Paragraph, dst, src, {
+    ecs_trace("Copy");
+    ecs_os_free(dst->str);
+    dst->str = ecs_os_strdup(src->str);
+});
+
+void hook_callback(ecs_iter_t *it) {
+    ecs_world_t *world = it->world;
+    ecs_entity_t event = it->event;
+
+    for (int i = 0; i < it->count; i ++) {
+        ecs_entity_t e = it->entities[i];
+        ecs_trace("%s: %s", 
+            ecs_get_name(world, event), ecs_get_name(world, e));
+    }
+}
 
 ECS_STRUCT(Textbox, {
     int32_t cursorPosition;
@@ -659,17 +700,46 @@ void GenTextTexture(ecs_iter_t* it)
     SDL_Interface* sdl = ecs_field(it, SDL_Interface, 4);
     for (int i = 0; i < it->count; it++)
     {
-        if (text[i].surface) {
-            SDL_FreeSurface(text[i].surface);
-        }
-        if (text[i].texture) {
-            SDL_DestroyTexture(text[i].texture);
-        }
+        if (text[i].changed)
+        {
+            if (text[i].surface) {
+                SDL_FreeSurface(text[i].surface);
+            }
+            if (text[i].texture) {
+                SDL_DestroyTexture(text[i].texture);
+            }
 
-        // Create new surface and texture
-        text[i].surface = TTF_RenderText_Solid(font->font, text[i].str, (SDL_Color){255, 255, 255, 255});
-        text[i].texture = SDL_CreateTextureFromSurface(sdl->renderer, text[i].surface);
-        text[i].changed = 0;  // Mark text as unchanged
+            // Create new surface and texture
+            text[i].surface = TTF_RenderText_Solid(font->font, text[i].str, (SDL_Color){255, 255, 255, 255});
+            text[i].texture = SDL_CreateTextureFromSurface(sdl->renderer, text[i].surface);
+            text[i].changed = 0;  // Mark text as unchanged
+        }
+    }
+}
+
+void GenParagraphTexture(ecs_iter_t* it)
+{
+    Paragraph* paragraph = ecs_field(it, Paragraph, 1);
+    Font* font = ecs_field(it, Font, 3);
+    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 4);
+    for (int i = 0; i < it->count; it++)
+    {
+        if (paragraph[i].changed)
+        {
+            if (paragraph[i].surface) {
+                SDL_FreeSurface(paragraph[i].surface);
+            }
+            if (paragraph[i].texture) {
+                SDL_DestroyTexture(paragraph[i].texture);
+            }
+
+            // Create new surface and texture
+            // printf("GenParagraphTexture\n");
+            // paragraph[i].surface = TTF_RenderText_Solid(font->font, paragraph[i].str, (SDL_Color){255, 255, 255, 255});
+            paragraph[i].surface = TTF_RenderText_Blended_Wrapped(font->font, paragraph[i].str, (SDL_Color){255, 255, 255, 255}, paragraph[i].wrap_width);
+            paragraph[i].texture = SDL_CreateTextureFromSurface(sdl->renderer, paragraph[i].surface);
+            paragraph[i].changed = 0;  // Mark paragraph as unchanged
+        }
     }
 }
 
@@ -723,6 +793,7 @@ void KeyNavSceneGraph(ecs_iter_t* it)
 {
     SceneGraph* sc = ecs_field(it, SceneGraph, 1);
     EventKeyInput* event = ecs_field(it, EventKeyInput, 3);
+    Text* ceText = ecs_field(it, Text, 4);
 
     if (event->keycode == SDLK_DOWN || event->keycode == SDLK_s)
     {
@@ -734,6 +805,14 @@ void KeyNavSceneGraph(ecs_iter_t* it)
                 SceneGraph* scNext = ecs_get(it->world, next, SceneGraph);
                 if (scNext->is_expanded)
                 {
+                    char* str = ecs_entity_to_json(it->world, scNext->symbol, &(ecs_entity_to_json_desc_t) {
+                        .serialize_path = true,
+                        .serialize_values = true
+                    });
+                    strcpy(ceText->str, str);
+                    ceText->changed = 1;
+                    // printf("ent = %s\n", str);
+                    ecs_os_free(str);
                     ecs_add_pair(it->world, it->entities[i], EcsChildOf, next);
                     break;
                 }
@@ -749,6 +828,15 @@ void KeyNavSceneGraph(ecs_iter_t* it)
                 SceneGraph* scPrev = ecs_get(it->world, prev, SceneGraph);
                 if (scPrev->is_expanded)
                 {
+                    char* str = ecs_entity_to_json(it->world, scPrev->symbol, &(ecs_entity_to_json_desc_t) {
+                        .serialize_path = true,
+                        .serialize_values = true
+                    });
+                    strcpy(ceText->str, str);
+                    ceText->changed = 1;
+                    // printf("ent = %s\n", str);
+                    ecs_os_free(str);
+
                     ecs_add_pair(it->world, it->entities[i], EcsChildOf, prev);
                     break;
                 }
@@ -801,7 +889,6 @@ void MouseWheelNavSceneGraph(ecs_iter_t* it)
 
 void UpdateSymbolBackground(ecs_iter_t* it)
 {
-    printf("UpdateSymbolBackground\n");
     Box* box = ecs_field(it, Box, 1);
     Position* p = ecs_field(it, Position, 2);
     SceneGraph* sc = ecs_field(it, SceneGraph, 4);
@@ -822,22 +909,29 @@ void UpdateSymbolBackground(ecs_iter_t* it)
     }
 }
 
+bool isValidTexture(SDL_Texture *texture) {
+    int queryResult = SDL_QueryTexture(texture, NULL, NULL, NULL, NULL);
+    return queryResult == 0;
+}
+
 void RenderCommander(ecs_iter_t* it)
 {
     // printf("Render COMMANDER!\n");
-    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 7);
+    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 8);
     Position* p = ecs_field(it, Position, 1);
     Renderable* renderable = ecs_field(it, Renderable, 2);
 
     // Optional
     Sprite* s = ecs_field(it, Sprite, 3);
     Text* text = ecs_field(it, Text, 4);
-    Line* l = ecs_field(it, Line, 5);
-    Box* box = ecs_field(it, Box, 6);
+    Paragraph* para = ecs_field(it, Paragraph, 5);
+    Line* l = ecs_field(it, Line, 6);
+    Box* box = ecs_field(it, Box, 7);
 
     if (s)
     {
         for (int i = 0; i < it->count; i++) {
+            if (!renderable[i].visible) continue;
             SDL_Rect dst;
             dst.x = (int)p[i].x;
             dst.y = (int)p[i].y;
@@ -849,6 +943,7 @@ void RenderCommander(ecs_iter_t* it)
     if (text)
     {        
         for (int i = 0; i < it->count; i++) {
+            if (!renderable[i].visible) continue;
             SDL_Rect dst;
             dst.x = (int)p[i].x;
             dst.y = (int)p[i].y;
@@ -857,10 +952,22 @@ void RenderCommander(ecs_iter_t* it)
             SDL_RenderCopy(sdl->renderer, text[i].texture, NULL, &dst);
         }
     }
+    if (para)
+    {        
+        for (int i = 0; i < it->count; i++) {
+            if (!renderable[i].visible) continue;
+            SDL_Rect dst;
+            dst.x = (int)p[i].x;
+            dst.y = (int)p[i].y;
+            SDL_QueryTexture(para[i].texture, NULL, NULL, &dst.w, &dst.h);  // Get the width and height from the texture
+            SDL_RenderCopy(sdl->renderer, para[i].texture, NULL, &dst);
+        }
+    }
     if (l)
     {
         for (int i = 0; i < it->count; i++)
         {
+            if (!renderable[i].visible) continue;
             SDL_SetRenderDrawColor(sdl->renderer, 128, 128, 128, 255);
             // SDL_SetRenderDrawColor(sdl->renderer, 255, 0, 0, 255);
             SDL_RenderDrawLine(sdl->renderer, p[i].x + l[i].x1, p[i].y + l[i].y1, p[i].x +  l[i].x2, p[i].y + l[i].y2);
@@ -870,6 +977,7 @@ void RenderCommander(ecs_iter_t* it)
     if (box)
     {
         for (int i = 0; i < it->count; i++) {
+            if (!renderable[i].visible) continue;
             SDL_Rect rect;
             rect.x = (int)p[i].x + box[i].x;
             rect.y = (int)p[i].y + box[i].y;
@@ -934,7 +1042,7 @@ bool isLayerVisible(Layer* layer) {
 }
 
 
-void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, SDL_Renderer* renderer) {
+void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, SDL_Renderer* renderer, SDL_Window* window) {
 
     ecs_entity_t node[CUTE_ASEPRITE_MAX_LAYERS];
     memset(node, 0, sizeof(node));
@@ -961,13 +1069,27 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, 
             }
         }
 
+        int window_width, window_height;
+        SDL_GetWindowSize(window, &window_width, &window_height);
+
         for (int i = 0; i < ase->layer_count; ++i) 
         {
             ase_layer_t* layer = ase->layers + i;
             if (layer->type == ASE_LAYER_TYPE_GROUP)
             {
                 ecs_entity_t e = ecs_set_name(world, 0, layer->name);
-                ecs_set_pair(world, e, Position, World, {0, 0});
+                
+                // TODO: This needs to parse the scene_graph_interface direct children instead...
+                // Calculate centered position
+                float pos_x = (window_width - ase->w) / 2.0f;
+                float pos_y = (window_height - ase->h) / 2.0f;
+
+                // If it's the first group layer, set its position to the centered position
+                if (i == 1) {
+                    ecs_set_pair(world, e, Position, World, {pos_x, pos_y});
+                } else {
+                    ecs_set_pair(world, e, Position, World, {0, 0});
+                }
                 
                 if (layer->parent)
                 {
@@ -975,10 +1097,6 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, 
                 } else {
                     log_trace("CREATE GROUP: %s NO PARENT LAYER\n", layer->name);
                 }
-                // if (hasNamedParent(layer, "agents")) {
-                //     // TODO: This messes up layers parenting too unfortunately....
-                //     makeAgent(layer->name, world, e);
-                // }
             }
         }
 
@@ -1055,18 +1173,6 @@ void parseAsepriteFile(ase_t* ase, ecs_world_t* world, ecs_entity_t sceneGraph, 
 
                     ecs_set(world, e, Sprite, {texture, cel->w, cel->h});
                     ecs_set(world, e, Renderable, {i, true});
-
-                    // if (hasNamedParent(cel->layer, "agents")) {
-                    //     makeAgent(cel->layer->name, world, e);
-                    // } else if (hasNamedAncestor(cel->layer, "agents"))
-                    // {
-                    //     ecs_entity_t agent = ecs_lookup(world, strcat(cel->layer->parent, "_agent"));
-                    //     if (ecs_is_valid(world, agent))
-                    //     {
-                    //         ecs_add_pair(world, e, EcsChildOf, agent);
-                    //     }
-                    //     // TODO: Figure out how to call systems with non-parent ancestors
-                    // }
                 }
             }   
         }
@@ -1306,6 +1412,32 @@ int compare_sc_index(
     return (sc1->index > sc2->index) - (sc1->index < sc2->index);
 }
 
+char* load_string_from_file(const char* filename) {
+    FILE* file = fopen(filename, "r");
+    if (file == NULL) {
+        return NULL;
+    }
+
+    // Find out the length of the string
+    fseek(file, 0, SEEK_END);
+    long length = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    // Allocate memory for the string (plus 1 for the null terminator)
+    char* str = (char*)malloc(length + 1);
+    if (str == NULL) {
+        fclose(file);
+        return NULL;
+    }
+
+    // Read the file into the string
+    fread(str, 1, length, file);
+    str[length] = '\0';  // Add the null terminator
+
+    fclose(file);
+    return str;
+}
+
 int main(int argc, char *argv[]) {
     log_set_quiet(true);
     ecs_world_t *world = ecs_init();
@@ -1327,6 +1459,7 @@ int main(int argc, char *argv[]) {
     ECS_META_COMPONENT(world, Size);
     ECS_META_COMPONENT(world, Cursor);
     ECS_META_COMPONENT(world, Text);
+    ECS_META_COMPONENT(world, Paragraph);
     ECS_META_COMPONENT(world, Test);
     ECS_META_COMPONENT(world, SceneGraph);
     ECS_META_COMPONENT(world, Renderable);
@@ -1340,13 +1473,28 @@ int main(int argc, char *argv[]) {
     ECS_COMPONENT_DEFINE(world, Sprite);
     ECS_COMPONENT_DEFINE(world, EventKeyInput);
     ECS_COMPONENT_DEFINE(world, SDL_Interface);
-    ECS_COMPONENT_DEFINE(world, SceneGraphLayout);
 
     ECS_TAG_DEFINE(world, Selected);
     ECS_TAG_DEFINE(world, Symbol);
     ECS_TAG_DEFINE(world, World);
     ECS_TAG_DEFINE(world, Local);
     ECS_TAG_DEFINE(world, Background);
+
+    // ecs_set_hooks(world, Paragraph, {
+    //     /* Resource management hooks. These hooks should primarily be used for
+    //      * managing memory used by the component. */
+    //     .ctor = ecs_ctor(Paragraph),
+    //     .move = ecs_move(Paragraph),
+    //     .copy = ecs_copy(Paragraph),
+    //     .dtor = ecs_dtor(Paragraph),
+
+    //     /* Lifecycle hooks. These hooks should be used for application logic. */
+    //     .on_add = hook_callback,
+    //     .on_remove = hook_callback,
+    //     .on_set = hook_callback
+    // });
+
+
     // ecs_add_id(world, Symbol, EcsSymmetric);
 
     // TODO: Vertical/horizontal scene graph hierarchy lines
@@ -1357,12 +1505,15 @@ int main(int argc, char *argv[]) {
     ecs_add(world, ent, Text);
     ecs_add(world, ent, TestNormal);
 
-    ecs_entity_t sceneGraph = ecs_new_entity(world, "scene_graph_interface");
+    ecs_entity_t sceneGraph = ecs_new_entity(world, "root");
     ecs_add(world, sceneGraph, SceneGraph);
-    ecs_add(world, sceneGraph, SceneGraphLayout);
-    
 
-    ase_t* ase = cute_aseprite_load_from_file("table.ase", NULL);
+    ecs_entity_t componentEditor = ecs_new_entity(world, "component_editor");
+    ecs_set_pair(world, componentEditor, Position, World, {1024, 8});
+    ecs_set(world, componentEditor, Text, {"", NULL, NULL, 1});
+    ecs_set(world, componentEditor, Renderable, {10000, true});
+
+    ase_t* ase = cute_aseprite_load_from_file("dialogue.ase", NULL);
 
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
@@ -1377,8 +1528,8 @@ int main(int argc, char *argv[]) {
     }
     int width = dm.w;
     int height = dm.h;
-    SDL_Window* window = SDL_CreateWindow("Book Simulator Online", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_FULLSCREEN_DESKTOP);
-    // SDL_Window* window = SDL_CreateWindow("Book Simulator Online", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, ase->w, ase->h, SDL_WINDOW_SHOWN);
+    // SDL_Window* window = SDL_CreateWindow("Book Simulator Online", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_FULLSCREEN_DESKTOP);
+    SDL_Window* window = SDL_CreateWindow("Book Simulator Online", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, ase->w, ase->h, SDL_WINDOW_SHOWN);
     if (!window) {
         printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
         return -1;
@@ -1388,6 +1539,8 @@ int main(int argc, char *argv[]) {
         printf("Renderer could not be created! SDL_Error: %s\n", SDL_GetError());
         return -1;
     }
+
+    ecs_entity_t settings = ecs_new_entity(world, "settings");
 
     if (TTF_Init() == -1) {
         printf("TTF_Init: %s\n", TTF_GetError());
@@ -1403,14 +1556,15 @@ int main(int argc, char *argv[]) {
     ecs_entity_t sdl = ecs_set_name(world, 0, "sdl");
     ecs_set(world, sdl, SDL_Interface, {window, renderer});
     
-    ECS_OBSERVER(world, GenTextTexture, EcsOnSet, Text, Renderable, Font(resource), SDL_Interface(sdl));
+    // ECS_OBSERVER(world, GenTextTexture, EcsOnSet, Text, Renderable, Font(resource), SDL_Interface(sdl));
+    // ECS_OBSERVER(world, GenParagraphTexture, EcsOnSet, Paragraph, Renderable, Font(resource), SDL_Interface(sdl));
 
     // ecs_entity_t test = ecs_new(world, 0);
     // ecs_set(world, test, Transform, {0, 0, 64, 64});
     // ecs_set(world, test, Text, {"Bulwark", NULL, NULL, 1}); // TODO: OBSERVER construction
     // ecs_set(world, test, Textbox, {0, true});
 
-    parseAsepriteFile(ase, world, sceneGraph, renderer);
+    parseAsepriteFile(ase, world, sceneGraph, renderer, window);
 
     ecs_entity_t tb = ecs_new(world, 0);
     ecs_add(world, tb, Textbox);
@@ -1573,6 +1727,21 @@ int main(int argc, char *argv[]) {
         ecs_add_pair(world, nodes[i], EcsChildOf, parents[i]);
     }
 
+    ecs_entity_t message = ecs_set_name(world, 0, "message");
+    ecs_set(world, message, Renderable, {4000, true});
+    ecs_set_pair(world, message, Position, Local, {8, 8});
+    ecs_set_pair(world, message, Position, World, {0, 0});
+    char* msg_str = load_string_from_file("output.txt");
+    printf("%s\n", msg_str);
+    ecs_set(world, message, Paragraph, {
+        msg_str, // dynamically allocated string loaded from file
+        NULL, // surface
+        NULL, // texture
+        1,    // changed
+        400   // wrap_width
+    });
+    ecs_entity_t bdb = ecs_lookup_fullpath(world, "root.agents.bulwark_agent.bulwark.dialogue_box");
+    ecs_add_pair(world, message, EcsChildOf, bdb);
 
     ECS_SYSTEM(world, SetupSelectedNodeIndicator, EcsPostUpdate, Selected, Box, SceneGraph(parent), Text(parent));
     ECS_SYSTEM(world, Input, EcsPreUpdate, [inout] *());
@@ -1603,7 +1772,7 @@ int main(int argc, char *argv[]) {
     ECS_SYSTEM(world, HandleBackspace, EcsOnUpdate, Textbox, Text, EventKeyInput(input));
 
     ECS_SYSTEM(world, ToggleSceneGraphHierarchy, EcsOnUpdate, [inout] SceneGraph(parent), Selected, EventKeyInput(input));
-    ECS_SYSTEM(world, KeyNavSceneGraph, EcsOnUpdate, SceneGraph(parent), Selected, EventKeyInput(input));
+    ECS_SYSTEM(world, KeyNavSceneGraph, EcsOnUpdate, SceneGraph(parent), Selected, EventKeyInput(input), Text(component_editor));
     ECS_SYSTEM(world, MouseWheelNavSceneGraph, EcsOnUpdate, SceneGraph(parent), Selected, EventMouseWheel(input));
     ECS_SYSTEM(world, UpdateArrowDirection, EcsPostUpdate, SceneGraph(parent), (Position, Local), Sprite, ArrowStatus, SDL_Interface(sdl));
     ECS_SYSTEM(world, UpdateSceneGraphLines, EcsPostUpdate, SceneGraph);
@@ -1611,6 +1780,9 @@ int main(int argc, char *argv[]) {
 
     ECS_SYSTEM(world, TextboxClick, EcsOnUpdate, Textbox, Position, Size, EventMouseClick(input));
     ECS_SYSTEM(world, TextboxCursorBlink, EcsOnUpdate, Textbox, Cursor);
+
+    ECS_SYSTEM(world, GenTextTexture, EcsOnUpdate, Text, Renderable, Font(resource), SDL_Interface(sdl));
+    ECS_SYSTEM(world, GenParagraphTexture, EcsOnUpdate, Paragraph, Renderable, Font(resource), SDL_Interface(sdl));
 
     // ECS_SYSTEM(world, Render, EcsPostFrame, (Position, World), Sprite, SDL_Interface(sdl));
     ECS_SYSTEM(world, UpdateTextSurface, EcsPreFrame, (Position, World), Text, Font(resource), ?Renderable, SDL_Interface(sdl));
@@ -1620,7 +1792,7 @@ int main(int argc, char *argv[]) {
             .add = { ecs_dependson(EcsPostFrame) }
         }),
         .query = {
-            .filter.expr = "(Position, World), Renderable, ?Sprite, ?Text, ?Line, ?Box, SDL_Interface(sdl)",
+            .filter.expr = "(Position, World), Renderable, ?Sprite, ?Text, ?Paragraph, ?Line, ?Box, SDL_Interface(sdl)",
             // .filter.terms = {
             //     {.id = ecs_id(SDL_Interface), .entity = ecs_id(sdl) },
             //     {.id = ecs_id(Renderable) },
@@ -1645,6 +1817,12 @@ int main(int argc, char *argv[]) {
         });
 
     while (ecs_progress(world, 0)) {
+
+        char* updated_msg = load_string_from_file("output.txt");
+        // printf("%s\n", msg_str);
+        Paragraph* para = ecs_get_mut(world, message, Paragraph);
+        para->str = updated_msg;
+        para->changed = 1;
 
         ecs_iter_t sc_it = ecs_query_iter(world, qsc);
         int visible_index = 0;

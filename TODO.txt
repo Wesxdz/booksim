@@ -1,6 +1,8 @@
 Progress:
 >Inserting nodes within the existing scene graph ---> DONE
+    Mouse interaction with scene graph
 >Viewer/Editor for selected entity components
+    
 Prefab maker user interface
 System loop
 WYSIWYG builder
