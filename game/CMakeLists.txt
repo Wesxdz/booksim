@@ -10,7 +10,7 @@ include_directories("include" "SDL2_ttf-2.20.2")
 set(CMAKE_BUILD_TYPE Debug)
 
 # Add the subdirectory for flecs
-add_subdirectory(flecs-3.2.3)
+add_subdirectory(flecs-3.2.4)
 add_subdirectory(SDL2-2.0.20)
 add_subdirectory(SDL2_ttf-2.20.2)
 add_subdirectory(SDL_image-2.6.0)

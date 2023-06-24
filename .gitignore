@@ -6,6 +6,6 @@ game/build
 game/SDL2-2.0.20
 game/SDL2_ttf-2.20.2
 game/SDL_image-2.6.0/
-game/flecs-3.2.3/
+game/flecs-3.2.4/
 *.vscode
 read/

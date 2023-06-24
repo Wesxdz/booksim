@@ -127,6 +127,13 @@ typedef struct Sprite {
 } Sprite;
 ECS_COMPONENT_DECLARE(Sprite);
 
+typedef struct ChatCreated
+{
+    ecs_entity_t chatbox;
+    ecs_entity_t chatItem;
+} ChatCreated;
+ECS_COMPONENT_DECLARE(ChatCreated);
+
 ECS_STRUCT(Movable, {
     bool is_grabbed;
     float offset_x; // Offset between mouse cursor and sprite's top-left corner
@@ -538,14 +545,35 @@ void UserChatSubmit(ecs_iter_t* it)
 
     if (event->keycode == SDLK_RETURN)
     {
-        ecs_world_t* world = it->world;
-        printf("Submit chat!\n");
-
-        ecs_entity_t chatItem = ecs_new_entity(it->world, 0);
-        ecs_add_pair(it->world, chatItem, EcsIsA, ecs_lookup_fullpath(world, "UserChatItem"));
+        ecs_entity_t UserChatItem = ecs_lookup_fullpath(it->world, "UserChatItem");;
+        ecs_entity_t chatItemInst = ecs_new_w_pair(it->world, EcsIsA, UserChatItem);
+        ecs_entity_t UserChatMessage = ecs_lookup_child(it->world, UserChatItem, "UserChatMessage");
+        ecs_entity_t childTarget = ecs_get_target(it->world, chatItemInst, UserChatMessage, 0); // TODO: This line doesn't work :(
 
         ecs_entity_t adh = ecs_lookup_fullpath(it->world, "dialogue_frame.active_dialogue_history");
-        ecs_add_pair(world, chatItem, EcsChildOf, adh);
+        ecs_add_pair(it->world, chatItemInst, EcsChildOf, adh);
+
+        ecs_entity_t chat = ecs_new(it->world, 0);
+        ecs_set(it->world, chat, ChatCreated, {it->entities[0], chatItemInst});
+    }
+}
+
+void UserChatCreate(ecs_iter_t* it)
+{
+    ChatCreated* chat = ecs_field(it, ChatCreated, 1);
+    ecs_entity_t child = ecs_get_target(it->world, chat->chatItem, ecs_lookup_fullpath(it->world, "UserChatItem.UserChatMessage"), 0);
+    if (ecs_is_alive(it->world, child))
+    {
+        Text* text = ecs_get_mut(it->world, chat->chatbox, Text);
+        Paragraph* para = ecs_get_mut(it->world, child, Paragraph);
+        size_t len = strlen(text->str);
+        char* new_str = (char*)malloc((len + 1) * sizeof(char));
+        strcpy(new_str, text->str);
+        para->str = new_str;
+        para->changed = true;
+        memset(text->str, 0, len);
+        text->changed = true;
+        ecs_delete(it->world, it->entities[0]);
     }
 }
 
@@ -1595,6 +1623,7 @@ int main(int argc, char *argv[]) {
     ECS_COMPONENT_DEFINE(world, Sprite);
     ECS_COMPONENT_DEFINE(world, EventKeyInput);
     ECS_COMPONENT_DEFINE(world, SDL_Interface);
+    ECS_COMPONENT_DEFINE(world, ChatCreated);
 
     ECS_TAG_DEFINE(world, Selected);
     ECS_TAG_DEFINE(world, Symbol);
@@ -1919,6 +1948,16 @@ int main(int argc, char *argv[]) {
         ecs_set(world, UserChatBox, Renderable, {100, true});
         ecs_set(world, UserChatBox, Box, {0, 0, 418, 64, FILL, {96, 96, 96, 255}});
         ecs_add_pair(world, UserChatBox, EcsChildOf, UserChatItem);
+        ecs_add_pair(world, UserChatBox, EcsSlotOf, UserChatItem);
+
+        ecs_entity_t UserChatMessage = ecs_new_prefab(world, "UserChatMessage");
+        ecs_set_pair(world, UserChatMessage, Position, Local, {8, 8});
+        ecs_set_pair(world, UserChatMessage, Position, World, {0, 0});
+        ecs_override_pair(world, UserChatMessage, ecs_id(Position), World);
+        ecs_set(world, UserChatMessage, Renderable, {100, true});
+        ecs_set(world, UserChatMessage, Paragraph, {"", NULL, NULL, 0, 418-16});
+        ecs_add_pair(world, UserChatMessage, EcsChildOf, UserChatItem);
+        ecs_add_pair(world, UserChatMessage, EcsSlotOf, UserChatItem);
 
     // ecs_entity_t message = ecs_set_name(world, 0, "message");
     // ecs_set(world, message, Renderable, {4000, true});
@@ -2006,7 +2045,19 @@ int main(int argc, char *argv[]) {
     ECS_SYSTEM(world, RenderPresent, EcsPostFrame, SDL_Interface);
 
     ECS_SYSTEM(world, UserChatSubmit, EcsOnUpdate, Textbox, Text, EventKeyInput(input), UserChat(parent), VerticalLayout(dialogue_frame.active_dialogue_history));
-    
+    ECS_SYSTEM(world, UserChatCreate, EcsPostUpdate, ChatCreated, [out] Paragraph(), [out] Text());
+    // ecs_system(world, {
+    //     .entity = ecs_entity(world, {
+    //         .name = "UserChatSubmit",
+    //         .add = { ecs_dependson(EcsOnUpdate) }
+    //     }),
+    //     .query = {
+    //         .filter.expr = "Textbox, Text, EventKeyInput(input), UserChat(parent), VerticalLayout(dialogue_frame.active_dialogue_history)"
+    //     },
+    //     .callback = UserChatSubmit,
+    //     .no_readonly = true
+    // });
+
     ecs_query_t* qsc = ecs_query(world, {
         .filter.expr = "[inout] (Position, World), SceneGraph, ?SceneGraph(parent)",
         .order_by = (ecs_order_by_action_t)compare_sc_index,
