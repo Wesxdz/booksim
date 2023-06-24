@@ -2,6 +2,10 @@ Progress:
 >Inserting nodes within the existing scene graph ---> DONE
     Mouse interaction with scene graph
 >Viewer/Editor for selected entity components
+
+
+>> Context injection via GPT4 functions (ex, find most relevant flecs example)
+>> HOW?
     
 Prefab maker user interface
 System loop

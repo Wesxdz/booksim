@@ -41,7 +41,7 @@ def send_request(agent, model, messages):
 
 if __name__ == "__main__":
     agent = sys.argv[1]  # Get the agent's name from the command line arguments
-    model = 'gpt-3.5-turbo'
+    model = 'gpt-4'
     personality = load_message_from_file('description.json')
     messages = [
         {"role": "assistant", "content": f"{personality} Roleplay as {agent}. Output web search query that I should research."},

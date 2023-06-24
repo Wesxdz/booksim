@@ -1,0 +1,86 @@
+{
+    "file_path": "flecs_manual.txt",
+    "prompt": "Only include lines that explain or demonstrate how to create a prefab",
+    "linespans": [
+        {
+            "start": 22,
+            "stop": 22
+        },
+        {
+            "start": 28,
+            "stop": 28
+        },
+        {
+            "start": 33,
+            "stop": 38
+        },
+        {
+            "start": 56,
+            "stop": 56
+        },
+        {
+            "start": 58,
+            "stop": 58
+        },
+        {
+            "start": 61,
+            "stop": 62
+        },
+        {
+            "start": 154,
+            "stop": 183
+        },
+        {
+            "start": 186,
+            "stop": 188
+        },
+        {
+            "start": 222,
+            "stop": 223
+        },
+        {
+            "start": 235,
+            "stop": 237
+        },
+        {
+            "start": 271,
+            "stop": 290
+        },
+        {
+            "start": 364,
+            "stop": 370
+        },
+        {
+            "start": 372,
+            "stop": 372
+        },
+        {
+            "start": 439,
+            "stop": 469
+        },
+        {
+            "start": 503,
+            "stop": 505
+        },
+        {
+            "start": 541,
+            "stop": 576
+        },
+        {
+            "start": 609,
+            "stop": 614
+        },
+        {
+            "start": 616,
+            "stop": 618
+        },
+        {
+            "start": 620,
+            "stop": 634
+        },
+        {
+            "start": 695,
+            "stop": 728
+        }
+    ]
+}

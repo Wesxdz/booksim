@@ -1,0 +1,170 @@
+{
+    "file_path": "flecs_manual.txt",
+    "prompt": "Only include lines that explain or demonstrate how to access a specifically named entity within a SYSTEM C macro definition (without using get_mut).",
+    "linespans": [
+        {
+            "start": 43,
+            "stop": 50
+        },
+        {
+            "start": 56,
+            "stop": 62
+        },
+        {
+            "start": 68,
+            "stop": 71
+        },
+        {
+            "start": 73,
+            "stop": 74
+        },
+        {
+            "start": 91,
+            "stop": 92
+        },
+        {
+            "start": 159,
+            "stop": 167
+        },
+        {
+            "start": 170,
+            "stop": 172
+        },
+        {
+            "start": 177,
+            "stop": 184
+        },
+        {
+            "start": 193,
+            "stop": 204
+        },
+        {
+            "start": 213,
+            "stop": 225
+        },
+        {
+            "start": 258,
+            "stop": 259
+        },
+        {
+            "start": 267,
+            "stop": 280
+        },
+        {
+            "start": 283,
+            "stop": 285
+        },
+        {
+            "start": 287,
+            "stop": 289
+        },
+        {
+            "start": 293,
+            "stop": 296
+        },
+        {
+            "start": 298,
+            "stop": 299
+        },
+        {
+            "start": 303,
+            "stop": 304
+        },
+        {
+            "start": 306,
+            "stop": 306
+        },
+        {
+            "start": 314,
+            "stop": 338
+        },
+        {
+            "start": 344,
+            "stop": 344
+        },
+        {
+            "start": 364,
+            "stop": 393
+        },
+        {
+            "start": 452,
+            "stop": 461
+        },
+        {
+            "start": 471,
+            "stop": 472
+        },
+        {
+            "start": 514,
+            "stop": 514
+        },
+        {
+            "start": 543,
+            "stop": 543
+        },
+        {
+            "start": 559,
+            "stop": 561
+        },
+        {
+            "start": 563,
+            "stop": 563
+        },
+        {
+            "start": 566,
+            "stop": 567
+        },
+        {
+            "start": 571,
+            "stop": 571
+        },
+        {
+            "start": 573,
+            "stop": 573
+        },
+        {
+            "start": 575,
+            "stop": 576
+        },
+        {
+            "start": 586,
+            "stop": 589
+        },
+        {
+            "start": 591,
+            "stop": 591
+        },
+        {
+            "start": 593,
+            "stop": 593
+        },
+        {
+            "start": 595,
+            "stop": 598
+        },
+        {
+            "start": 602,
+            "stop": 603
+        },
+        {
+            "start": 620,
+            "stop": 625
+        },
+        {
+            "start": 631,
+            "stop": 661
+        },
+        {
+            "start": 663,
+            "stop": 680
+        },
+        {
+            "start": 682,
+            "stop": 695
+        },
+        {
+            "start": 726,
+            "stop": 726
+        }
+    ]
+}

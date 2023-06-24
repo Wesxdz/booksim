@@ -1,0 +1,848 @@
+[
+    {
+        "": [
+            {
+                "hello_world": [
+                    {
+                        "hello_world": [
+                            "include",
+                            "src"
+                        ]
+                    }
+                ]
+            },
+            {
+                "rules": [
+                    {
+                        "rules": [
+                            {
+                                "facts": [
+                                    {
+                                        "facts": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "component_inheritance": [
+                                    {
+                                        "component_inheritance": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "cyclic_variables": [
+                                    {
+                                        "cyclic_variables": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "setting_variables": [
+                                    {
+                                        "setting_variables": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "basics": [
+                                    {
+                                        "basics": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "transitive_queries": [
+                                    {
+                                        "transitive_queries": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "reflection": [
+                    {
+                        "reflection": [
+                            {
+                                "basics_json": [
+                                    {
+                                        "basics_json": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "query_to_json": [
+                                    {
+                                        "query_to_json": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "ser_opaque_vector": [
+                                    {
+                                        "ser_opaque_vector": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "runtime_nested_component": [
+                                    {
+                                        "runtime_nested_component": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "basics_deserialize": [
+                                    {
+                                        "basics_deserialize": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "world_ser_deser": [
+                                    {
+                                        "world_ser_deser": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "units": [
+                                    {
+                                        "units": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "query_to_custom_json": [
+                                    {
+                                        "query_to_custom_json": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "ser_opaque_string": [
+                                    {
+                                        "ser_opaque_string": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "runtime_component": [
+                                    {
+                                        "runtime_component": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "auto_define_struct": [
+                                    {
+                                        "auto_define_struct": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "basics": [
+                                    {
+                                        "basics": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "entity_type": [
+                                    {
+                                        "entity_type": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "auto_define_nested_struct": [
+                                    {
+                                        "auto_define_nested_struct": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "auto_define_enum": [
+                                    {
+                                        "auto_define_enum": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "nested_set_member": [
+                                    {
+                                        "nested_set_member": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "ser_opaque_type": [
+                                    {
+                                        "ser_opaque_type": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "basics_enum": [
+                                    {
+                                        "basics_enum": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "nested_struct": [
+                                    {
+                                        "nested_struct": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "basics_bitmask": [
+                                    {
+                                        "basics_bitmask": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "entities": [
+                    {
+                        "entities": [
+                            {
+                                "fwd_declare_component": [
+                                    {
+                                        "fwd_declare_component": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "hierarchy": [
+                                    {
+                                        "hierarchy": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "basics": [
+                                    {
+                                        "basics": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "hooks": [
+                                    {
+                                        "hooks": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "iterate_components": [
+                                    {
+                                        "iterate_components": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "observers": [
+                    {
+                        "observers": [
+                            {
+                                "monitor": [
+                                    {
+                                        "monitor": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "propagate": [
+                                    {
+                                        "propagate": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "basics": [
+                                    {
+                                        "basics": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "custom_event": [
+                                    {
+                                        "custom_event": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "yield_existing": [
+                                    {
+                                        "yield_existing": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "two_components": [
+                                    {
+                                        "two_components": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "explorer": [
+                    {
+                        "explorer": [
+                            "include",
+                            "src"
+                        ]
+                    }
+                ]
+            },
+            {
+                "queries": [
+                    {
+                        "queries": [
+                            {
+                                "group_iter": [
+                                    {
+                                        "group_iter": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "instancing": [
+                                    {
+                                        "instancing": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "sorting": [
+                                    {
+                                        "sorting": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "wildcards": [
+                                    {
+                                        "wildcards": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "singleton": [
+                                    {
+                                        "singleton": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "basics": [
+                                    {
+                                        "basics": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "group_by": [
+                                    {
+                                        "group_by": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "group_by_callbacks": [
+                                    {
+                                        "group_by_callbacks": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "change_tracking": [
+                                    {
+                                        "change_tracking": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "group_by_custom": [
+                                    {
+                                        "group_by_custom": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "hierarchies": [
+                                    {
+                                        "hierarchies": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "modules": [
+                    {
+                        "modules": [
+                            {
+                                "simple_module": [
+                                    {
+                                        "simple_module": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "prefabs": [
+                    {
+                        "prefabs": [
+                            {
+                                "nested_prefabs": [
+                                    {
+                                        "nested_prefabs": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "hierarchy": [
+                                    {
+                                        "hierarchy": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "basics": [
+                                    {
+                                        "basics": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "override": [
+                                    {
+                                        "override": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "variant": [
+                                    {
+                                        "variant": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "slots": [
+                                    {
+                                        "slots": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "relationships": [
+                    {
+                        "relationships": [
+                            {
+                                "exclusive_relations": [
+                                    {
+                                        "exclusive_relations": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "union": [
+                                    {
+                                        "union": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "symmetric_relations": [
+                                    {
+                                        "symmetric_relations": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "relation_component": [
+                                    {
+                                        "relation_component": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "basics": [
+                                    {
+                                        "basics": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "systems": [
+                    {
+                        "systems": [
+                            {
+                                "target_fps": [
+                                    {
+                                        "target_fps": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "custom_phases": [
+                                    {
+                                        "custom_phases": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "sync_point": [
+                                    {
+                                        "sync_point": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "custom_phases_no_builtin": [
+                                    {
+                                        "custom_phases_no_builtin": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "pipeline": [
+                                    {
+                                        "pipeline": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "custom_runner": [
+                                    {
+                                        "custom_runner": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "sync_point_delete": [
+                                    {
+                                        "sync_point_delete": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "startup_system": [
+                                    {
+                                        "startup_system": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "basics": [
+                                    {
+                                        "basics": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "time_interval": [
+                                    {
+                                        "time_interval": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "delta_time": [
+                                    {
+                                        "delta_time": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "no_readonly": [
+                                    {
+                                        "no_readonly": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "custom_pipeline": [
+                                    {
+                                        "custom_pipeline": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "system_ctx": [
+                                    {
+                                        "system_ctx": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "mutate_entity": [
+                                    {
+                                        "mutate_entity": [
+                                            "include",
+                                            "src"
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+]

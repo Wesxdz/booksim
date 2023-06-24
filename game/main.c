@@ -6,6 +6,15 @@
 #include "cute_aseprite.h"
 #include <string.h>
 #include "log.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/inotify.h>
+#include <limits.h>
+
+#define min(a,b) ((a) < (b) ? (a) : (b))
+#define max(a,b) ((a) > (b) ? (a) : (b))
 
 ecs_entity_t input;
 
@@ -27,6 +36,21 @@ ECS_STRUCT(SceneGraph,
     int32_t depth;
 });
 
+// Cascade direct child local transforms
+ECS_STRUCT(VerticalLayout,
+{
+    int32_t padding;
+});
+
+// Dynamically calculate bounds of all descendent elements
+ECS_STRUCT(UIElementBounds,
+{
+    int32_t min_x;
+    int32_t max_x;
+    int32_t min_y;
+    int32_t max_y;
+});
+
 ECS_TAG_DECLARE(Selected);
 
 // Relationship
@@ -40,14 +64,6 @@ ECS_ENUM(ScopeIndicator, {
 
 ECS_STRUCT(ArrowStatus, {
     ScopeIndicator scope;
-});
-
-// TODO: Refactor, replace component with Position pairs
-ECS_STRUCT(Transform, {
-    float x;
-    float y;
-    float r_x;
-    float r_y;
 });
 
 ECS_STRUCT(Line, {
@@ -77,10 +93,11 @@ ECS_STRUCT(Box, {
     Color color;
 });
 
-// TODO: Replace transform with (Position, World)/(Position, Local) pairs!
-
 ECS_TAG_DECLARE(World);
 ECS_TAG_DECLARE(Local);
+ECS_TAG_DECLARE(Relative);
+
+ECS_TAG_DECLARE(UserChat);
 
 ECS_STRUCT(Position, {
     int32_t x;
@@ -187,43 +204,9 @@ ECS_STRUCT(Paragraph, {
     int32_t wrap_width;
 });
 
-ECS_CTOR(Paragraph, ptr, {
-    ecs_trace("Ctor");
-    ptr->str = NULL;
+ECS_STRUCT(ParagraphLoader, {
+    char* filepath;
 });
-
-// The destructor should free resources.
-ECS_DTOR(Paragraph, ptr, {
-    ecs_trace("Dtor");
-    ecs_os_free(ptr->str);
-});
-
-// The move hook should move resources from one location to another.
-ECS_MOVE(Paragraph, dst, src, {
-    ecs_trace("Move");
-    ecs_os_free(dst->str);
-    dst->str = src->str;
-    src->str = NULL; // This makes sure the value doesn't get deleted twice,
-                       // as the destructor is still invoked after a move.
-});
-
-// The copy hook should copy resources from one location to another.
-ECS_COPY(Paragraph, dst, src, {
-    ecs_trace("Copy");
-    ecs_os_free(dst->str);
-    dst->str = ecs_os_strdup(src->str);
-});
-
-void hook_callback(ecs_iter_t *it) {
-    ecs_world_t *world = it->world;
-    ecs_entity_t event = it->event;
-
-    for (int i = 0; i < it->count; i ++) {
-        ecs_entity_t e = it->entities[i];
-        ecs_trace("%s: %s", 
-            ecs_get_name(world, event), ecs_get_name(world, e));
-    }
-}
 
 ECS_STRUCT(Textbox, {
     int32_t cursorPosition;
@@ -241,6 +224,32 @@ typedef struct SDL_Interface
     SDL_Renderer* renderer;
 } SDL_Interface;
 ECS_COMPONENT_DECLARE(SDL_Interface);
+
+char* load_string_from_file(char* filename) {
+    FILE* file = fopen(filename, "r");
+    if (file == NULL) {
+        return NULL;
+    }
+
+    // Find out the length of the string
+    fseek(file, 0, SEEK_END);
+    long length = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    // Allocate memory for the string (plus 1 for the null terminator)
+    char* str = (char*)malloc(length + 1);
+    if (str == NULL) {
+        fclose(file);
+        return NULL;
+    }
+
+    // Read the file into the string
+    fread(str, 1, length, file);
+    str[length] = '\0';  // Add the null terminator
+
+    fclose(file);
+    return str;
+}
 
 Sprite loadSprite(SDL_Renderer* renderer, char* file_path) {
     Sprite sprite;
@@ -324,7 +333,7 @@ for (int i = 0; i < it->count; i++)
 //     {
 //         // create SDL_Rect for the box around the text
 //         SDL_Rect rect;
-//         rect.x = p[i].x - 2; // subtract padding from position
+//         rect.x = p[i].x - 2; // subtract padding froworld_posm position
 //         rect.y = p[i].y + 2; // subtract padding from position
 //         if (t[i].surface)
 //         {
@@ -400,6 +409,16 @@ void TransformCascadeHierarchy(ecs_iter_t *it) {
                 world_pos[i].y = local_pos[i].y;
             }
         }
+    }
+}
+
+void LayoutUpdatePositions(ecs_iter_t *it) {
+    Position* local_pos = ecs_field(it, Position, 1);
+    Position* relative_pos = ecs_field(it, Position, 2);
+    for (int i = 0; i < it->count; i++) 
+    {
+        local_pos[i].x = relative_pos[i].x;
+        local_pos[i].y = relative_pos[i].y;
     }
 }
 
@@ -508,6 +527,25 @@ void TextboxEntry(ecs_iter_t* it) {
             // printf("%s\n", txt[i].str);
             txt->changed = true; // TODO: Refactor to OBSERVER event for performance
         }
+    }
+}
+
+void UserChatSubmit(ecs_iter_t* it)
+{
+    Textbox* tb = ecs_field(it, Textbox, 1);
+    Text* txt = ecs_field(it, Text, 2);
+    EventKeyInput* event = ecs_field(it, EventKeyInput, 3);
+
+    if (event->keycode == SDLK_RETURN)
+    {
+        ecs_world_t* world = it->world;
+        printf("Submit chat!\n");
+
+        ecs_entity_t chatItem = ecs_new_entity(it->world, 0);
+        ecs_add_pair(it->world, chatItem, EcsIsA, ecs_lookup_fullpath(world, "UserChatItem"));
+
+        ecs_entity_t adh = ecs_lookup_fullpath(it->world, "dialogue_frame.active_dialogue_history");
+        ecs_add_pair(world, chatItem, EcsChildOf, adh);
     }
 }
 
@@ -661,6 +699,26 @@ void UpdateSceneGraphLines(ecs_iter_t* it)
     }
 }
 
+void UpdateParagraph(ecs_iter_t* it)
+{
+    Paragraph* para = ecs_field(it, Paragraph, 1);
+    ParagraphLoader* loader = ecs_field(it, ParagraphLoader, 2);
+    for (int32_t i = 0; i < it->count; i++)
+    {
+        char* updated_msg = load_string_from_file(loader[i].filepath);
+        if (updated_msg == NULL) {
+            fprintf(stderr, "Failed to load string from file: %s\n", loader[i].filepath);
+            continue;
+        }
+        // printf("%s\n", msg_str);
+        if (strcmp(para[i].str, updated_msg) != 0)
+        {
+            para[i].str = updated_msg;
+            para[i].changed = 1;
+        }
+    }
+}
+
 void ToggleSceneGraphHierarchy(ecs_iter_t* it)
 {
     SceneGraph* sc = ecs_field(it, SceneGraph, 1);
@@ -700,20 +758,17 @@ void GenTextTexture(ecs_iter_t* it)
     SDL_Interface* sdl = ecs_field(it, SDL_Interface, 4);
     for (int i = 0; i < it->count; it++)
     {
-        if (text[i].changed)
-        {
-            if (text[i].surface) {
-                SDL_FreeSurface(text[i].surface);
-            }
-            if (text[i].texture) {
-                SDL_DestroyTexture(text[i].texture);
-            }
-
-            // Create new surface and texture
-            text[i].surface = TTF_RenderText_Solid(font->font, text[i].str, (SDL_Color){255, 255, 255, 255});
-            text[i].texture = SDL_CreateTextureFromSurface(sdl->renderer, text[i].surface);
-            text[i].changed = 0;  // Mark text as unchanged
+        if (text[i].surface) {
+            SDL_FreeSurface(text[i].surface);
         }
+        if (text[i].texture) {
+            SDL_DestroyTexture(text[i].texture);
+        }
+
+        // Create new surface and texture
+        text[i].surface = TTF_RenderText_Solid(font->font, text[i].str, (SDL_Color){255, 255, 255, 255});
+        text[i].texture = SDL_CreateTextureFromSurface(sdl->renderer, text[i].surface);
+        text[i].changed = 0;  // Mark text as unchanged
     }
 }
 
@@ -1384,11 +1439,73 @@ lambda_output iter_depth_recursive(ecs_world_t* world, ecs_entity_t root, int de
     return lo_ret;
 }
 
-ecs_entity_t create_ui_element(ecs_world_t *world, const char *name) {
-    ecs_entity_t e = ecs_new_id(world);
-    ecs_set_name(world, e, name);
-    return e;
+void calculate_element_bounds_recursive(ecs_world_t* world, ecs_entity_t root, UIElementBounds* bounds)
+{
+    // Initiate bounds with extreme values
+    bounds->min_x = 0;
+    bounds->min_y = 0;
+    bounds->max_x = 0;
+    bounds->max_y = 0;
+
+    ecs_iter_t it = ecs_children(world, root);
+    while (ecs_children_next(&it)) {
+        for (int i = 0; i < it.count; i++) {
+            update_bounds(world, it.entities[i], bounds);
+        }
+    }
 }
+
+void update_bounds(ecs_world_t* world, ecs_entity_t entity, UIElementBounds* bounds)
+{
+    Position* localPos = ecs_get_mut_pair(world, entity, Position, Local);
+    if (!localPos) {
+        // Entity doesn't have a local position, return.
+        return;
+    }
+
+    int32_t x = localPos->x;
+    int32_t y = localPos->y;
+
+    if (ecs_has(world, entity, Sprite)) {
+        Sprite* s = ecs_get_mut(world, entity, Sprite);
+        bounds->min_x = min(bounds->min_x, x);
+        bounds->min_y = min(bounds->min_y, y);
+        bounds->max_x = max(bounds->max_x, x + s->width);
+        bounds->max_y = max(bounds->max_y, y + s->height);
+    }
+
+    // TODO: Complete implementation
+    // Text* text = ecs_get_mut(world, entity, Text);
+    // if (text) {
+    //     // Similar logic for Text component...
+    // }
+
+    // Paragraph* para = ecs_get_mut(world, entity, Paragraph);
+    // if (para) {
+    //     // Similar logic for Paragraph component...
+    // }
+
+    // Line* l = ecs_get_mut(world, entity, Line);
+    // if (l) {
+    //     // Similar logic for Line component...
+    // }
+
+    if (ecs_has(world, entity, Box)) {
+        Box* box = ecs_get_mut(world, entity, Box);
+        bounds->min_x = min(bounds->min_x, x + box->x);
+        bounds->min_y = min(bounds->min_y, y + box->y);
+        bounds->max_x = max(bounds->max_x, x + box->x + box->w);
+        bounds->max_y = max(bounds->max_y, y + box->y + box->h);
+    }
+
+    ecs_iter_t it = ecs_children(world, entity);
+    while (ecs_children_next(&it)) {
+        for (int i = 0; i < it.count; i++) {
+            update_bounds(world, it.entities[i], bounds);
+        }
+    }
+}
+
 
 int compare_z_index(
     ecs_entity_t e1,
@@ -1412,39 +1529,41 @@ int compare_sc_index(
     return (sc1->index > sc2->index) - (sc1->index < sc2->index);
 }
 
-char* load_string_from_file(const char* filename) {
-    FILE* file = fopen(filename, "r");
-    if (file == NULL) {
-        return NULL;
-    }
+typedef struct LayoutPos
+{
+    ecs_entity_t e;
+    int32_t height;
+} LayoutPos;
 
-    // Find out the length of the string
-    fseek(file, 0, SEEK_END);
-    long length = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    // Allocate memory for the string (plus 1 for the null terminator)
-    char* str = (char*)malloc(length + 1);
-    if (str == NULL) {
-        fclose(file);
-        return NULL;
-    }
-
-    // Read the file into the string
-    fread(str, 1, length, file);
-    str[length] = '\0';  // Add the null terminator
-
-    fclose(file);
-    return str;
-}
+#define MAX_EVENTS 1024
+#define LEN_NAME 16
+#define EVENT_SIZE (sizeof (struct inotify_event))
+#define BUF_LEN ((MAX_EVENTS * (EVENT_SIZE + LEN_NAME)) + 1)
 
 int main(int argc, char *argv[]) {
+    int length, i = 0, fd;
+    int wd;
+    char buffer[BUF_LEN];
+
+    fd = inotify_init();
+
+    if (fd < 0) {
+        perror("inotify_init");
+    }
+
+    wd = inotify_add_watch(fd, ".", IN_CREATE);
+
+    if (wd < 0) {
+        printf("Couldn't add watch to %s\n", ".");
+    } else {
+        printf("Watching:: %s\n", ".");
+    }
+
     log_set_quiet(true);
     ecs_world_t *world = ecs_init();
     ECS_IMPORT(world, FlecsMeta);
     input = ecs_set_name(world, 0, "input");
 
-    ECS_META_COMPONENT(world, Transform);
     ECS_META_COMPONENT(world, Movable);
     ECS_META_COMPONENT(world, Color);
     ECS_META_COMPONENT(world, ScopeIndicator);
@@ -1460,6 +1579,7 @@ int main(int argc, char *argv[]) {
     ECS_META_COMPONENT(world, Cursor);
     ECS_META_COMPONENT(world, Text);
     ECS_META_COMPONENT(world, Paragraph);
+    ECS_META_COMPONENT(world, ParagraphLoader);
     ECS_META_COMPONENT(world, Test);
     ECS_META_COMPONENT(world, SceneGraph);
     ECS_META_COMPONENT(world, Renderable);
@@ -1467,6 +1587,8 @@ int main(int argc, char *argv[]) {
     ECS_META_COMPONENT(world, BoxMode);
     ECS_META_COMPONENT(world, Box);
     ECS_META_COMPONENT(world, ArrowStatus);
+    ECS_META_COMPONENT(world, VerticalLayout);
+    ECS_META_COMPONENT(world, UIElementBounds);
 
     ECS_COMPONENT_DEFINE(world, TestNormal);
     ECS_COMPONENT_DEFINE(world, Font);
@@ -1478,27 +1600,11 @@ int main(int argc, char *argv[]) {
     ECS_TAG_DEFINE(world, Symbol);
     ECS_TAG_DEFINE(world, World);
     ECS_TAG_DEFINE(world, Local);
+    ECS_TAG_DEFINE(world, Relative);
     ECS_TAG_DEFINE(world, Background);
-
-    // ecs_set_hooks(world, Paragraph, {
-    //     /* Resource management hooks. These hooks should primarily be used for
-    //      * managing memory used by the component. */
-    //     .ctor = ecs_ctor(Paragraph),
-    //     .move = ecs_move(Paragraph),
-    //     .copy = ecs_copy(Paragraph),
-    //     .dtor = ecs_dtor(Paragraph),
-
-    //     /* Lifecycle hooks. These hooks should be used for application logic. */
-    //     .on_add = hook_callback,
-    //     .on_remove = hook_callback,
-    //     .on_set = hook_callback
-    // });
-
-
-    // ecs_add_id(world, Symbol, EcsSymmetric);
+    ECS_TAG_DEFINE(world, UserChat);
 
     // TODO: Vertical/horizontal scene graph hierarchy lines
-    // TODO: Toggle scene graph expanded
 
     ecs_entity_t ent = ecs_new_entity(world, "ent");
     ecs_add(world, ent, Textbox);
@@ -1513,7 +1619,7 @@ int main(int argc, char *argv[]) {
     ecs_set(world, componentEditor, Text, {"", NULL, NULL, 1});
     ecs_set(world, componentEditor, Renderable, {10000, true});
 
-    ase_t* ase = cute_aseprite_load_from_file("dialogue.ase", NULL);
+    ase_t* ase = cute_aseprite_load_from_file("../res/dialogue.ase", NULL);
 
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
@@ -1556,18 +1662,10 @@ int main(int argc, char *argv[]) {
     ecs_entity_t sdl = ecs_set_name(world, 0, "sdl");
     ecs_set(world, sdl, SDL_Interface, {window, renderer});
     
-    // ECS_OBSERVER(world, GenTextTexture, EcsOnSet, Text, Renderable, Font(resource), SDL_Interface(sdl));
+    ECS_OBSERVER(world, GenTextTexture, EcsOnSet, Text, Renderable, Font(resource), SDL_Interface(sdl));
     // ECS_OBSERVER(world, GenParagraphTexture, EcsOnSet, Paragraph, Renderable, Font(resource), SDL_Interface(sdl));
 
-    // ecs_entity_t test = ecs_new(world, 0);
-    // ecs_set(world, test, Transform, {0, 0, 64, 64});
-    // ecs_set(world, test, Text, {"Bulwark", NULL, NULL, 1}); // TODO: OBSERVER construction
-    // ecs_set(world, test, Textbox, {0, true});
-
-    parseAsepriteFile(ase, world, sceneGraph, renderer, window);
-
-    ecs_entity_t tb = ecs_new(world, 0);
-    ecs_add(world, tb, Textbox);
+    // parseAsepriteFile(ase, world, sceneGraph, renderer, window);
 
     FILE* file = fopen("log.txt", "w");
     if (file == NULL) {
@@ -1577,27 +1675,27 @@ int main(int argc, char *argv[]) {
     log_add_fp(file, 0);
 
 
-    lambda_data sc_data;
-    int graphCount = get_children_count(world, sceneGraph)+1;
-    sc_data.nodes = calloc(graphCount, sizeof(ecs_entity_t));
-    sc_data.parents = calloc(graphCount, sizeof(ecs_entity_t));
-    lambda_output lo = iter_depth_recursive(world, sceneGraph, 0, 0, NULL, NULL, &sc_data, &lambda_function);
-    for (int i = 0; i < graphCount; i++)
-    {
-        if (ecs_is_valid(world, sc_data.nodes[i]) && ecs_is_valid(world, sc_data.parents[i]))
-        {
-            // char* s2 = ecs_get_name(world, sc_data.parents[i]);
-            ecs_add_pair(world, sc_data.nodes[i], EcsChildOf, sc_data.parents[i]);
-        }
-    }
-    for (int i = 0; i < graphCount; i++)
-    {
-        if (ecs_is_valid(world, sc_data.nodes[i]) && ecs_is_valid(world, sc_data.parents[i]))
-        {
-            char* s1 = ecs_get_fullpath(world, sc_data.nodes[i]);
-            // printf("Node %s\n", s1);
-        }
-    }
+    // lambda_data sc_data;
+    // int graphCount = get_children_count(world, sceneGraph)+1;
+    // sc_data.nodes = calloc(graphCount, sizeof(ecs_entity_t));
+    // sc_data.parents = calloc(graphCount, sizeof(ecs_entity_t));
+    // lambda_output lo = iter_depth_recursive(world, sceneGraph, 0, 0, NULL, NULL, &sc_data, &lambda_function);
+    // for (int i = 0; i < graphCount; i++)
+    // {
+    //     if (ecs_is_valid(world, sc_data.nodes[i]) && ecs_is_valid(world, sc_data.parents[i]))
+    //     {
+    //         // char* s2 = ecs_get_name(world, sc_data.parents[i]);
+    //         ecs_add_pair(world, sc_data.nodes[i], EcsChildOf, sc_data.parents[i]);
+    //     }
+    // }
+    // for (int i = 0; i < graphCount; i++)
+    // {
+    //     if (ecs_is_valid(world, sc_data.nodes[i]) && ecs_is_valid(world, sc_data.parents[i]))
+    //     {
+    //         char* s1 = ecs_get_fullpath(world, sc_data.nodes[i]);
+    //         // printf("Node %s\n", s1);
+    //     }
+    // }
 
     // TODO: Create agents, auto update SceneGraph nodes
     // How to create agents?
@@ -1609,139 +1707,234 @@ int main(int argc, char *argv[]) {
     // Let's start with approach 1
     // Start by iterating through agents_node entity
 
-    ecs_entity_t agentsNode = ecs_lookup(world, "agents_node");
-    SceneGraph* agentsSceneGraph = ecs_get_mut(world, agentsNode, SceneGraph);
-    ecs_iter_t agents_it = ecs_children(world, agentsNode);
-    int agent_i = 0;
-    int h_index = 0;
-    ecs_entity_t nodes[100];
-    ecs_entity_t parents[100];
-    while (ecs_children_next(&agents_it)) {
-        for (int i = 0; i < agents_it.count; i++)
-        {
-            ecs_entity_t child = agents_it.entities[i];
-            if (ecs_is_valid(world, child))
-            {
-                // printf("Agent child %s\n", ecs_get_name(agents_it.world, child));
-                SceneGraph* node = ecs_get(world, child, SceneGraph);
-                if (node && ecs_is_valid(world, node->symbol))
-                {
-                    char* agent_name = ecs_get_name(world, node->symbol);
-                    char* name = malloc((strlen(agent_name) + strlen("_agent") + 1) * sizeof(char)); // +1 for the null-terminator
-                    strcpy(name, agent_name);
-                    strcat(name, "_agent");
-                    printf("Agent created %s\n", name);
-                    ecs_entity_t ai = ecs_set_name(world, 0, name);
-                    free(name);
-                    ecs_set_pair(world, ai, Position, World, {0, 0});
-                    ecs_set(world, ai, Movable, {false});
-                    ecs_set(world, ai, Stats, {0, 0});
+    // ecs_entity_t agentsNode = ecs_lookup(world, "agents_node");
+    // SceneGraph* agentsSceneGraph = ecs_get_mut(world, agentsNode, SceneGraph);
+    // ecs_iter_t agents_it = ecs_children(world, agentsNode);
+    // int agent_i = 0;
+    // int h_index = 0;
+    // ecs_entity_t nodes[100];
+    // ecs_entity_t parents[100];
+    // while (ecs_children_next(&agents_it)) {
+    //     for (int i = 0; i < agents_it.count; i++)
+    //     {
+    //         ecs_entity_t child = agents_it.entities[i];
+    //         if (ecs_is_valid(world, child))
+    //         {
+    //             // printf("Agent child %s\n", ecs_get_name(agents_it.world, child));
+    //             SceneGraph* node = ecs_get(world, child, SceneGraph);
+    //             if (node && ecs_is_valid(world, node->symbol))
+    //             {
+    //                 char* agent_name = ecs_get_name(world, node->symbol);
+    //                 char* name = malloc((strlen(agent_name) + strlen("_agent") + 1) * sizeof(char)); // +1 for the null-terminator
+    //                 strcpy(name, agent_name);
+    //                 strcat(name, "_agent");
+    //                 printf("Agent created %s\n", name);
+    //                 ecs_entity_t ai = ecs_set_name(world, 0, name);
+    //                 free(name);
+    //                 ecs_set_pair(world, ai, Position, World, {0, 0});
+    //                 ecs_set(world, ai, Movable, {false});
+    //                 ecs_set(world, ai, Stats, {0, 0});
 
-                    ecs_add_pair(world, ai, EcsChildOf, agentsSceneGraph->symbol);
-                    ecs_add_pair(world, node->symbol, EcsChildOf, ai);
-                    // We need to update the SceneGraph with the new node hierarchy in a way that can
-                    // be reusable for generic updates
-                    // How?
-                    // Let's start by refactoring the code that generates a SceneGraph node to a utiliy function
-                    char* aname = ecs_get_name(world, ai);
-                    printf("Agent name gather %s\n", aname);
-                    lambda_parameters lp = {world, ai, node->depth, node->index, node->prev};
+    //                 ecs_add_pair(world, ai, EcsChildOf, agentsSceneGraph->symbol);
+    //                 ecs_add_pair(world, node->symbol, EcsChildOf, ai);
+    //                 // We need to update the SceneGraph with the new node hierarchy in a way that can
+    //                 // be reusable for generic updates
+    //                 // How?
+    //                 // Let's start by refactoring the code that generates a SceneGraph node to a utiliy function
+    //                 char* aname = ecs_get_name(world, ai);
+    //                 printf("Agent name gather %s\n", aname);
+    //                 lambda_parameters lp = {world, ai, node->depth, node->index, node->prev};
 
-                    // TODO: Check if node hierarchy is correct!
-                    // I don't think it's actually reparenting.....zzzz
-                    ecs_entity_t createdNode = create_node(&lp);
+    //                 // TODO: Check if node hierarchy is correct!
+    //                 // I don't think it's actually reparenting.....zzzz
+    //                 ecs_entity_t createdNode = create_node(&lp);
 
-                    if (agent_i == 0)
-                    {
-                        agentsSceneGraph->next = createdNode;
-                    }
-                    SceneGraph* createdSceneGraph = ecs_get_mut(world, createdNode, SceneGraph);
-                    createdSceneGraph->next = child;
-                    node->prev = createdNode; // Update the pushed node to point here
-                    // Now that the node is created...
-                    // Let's update the rest of the graph to account for the changes...
+    //                 if (agent_i == 0)
+    //                 {
+    //                     agentsSceneGraph->next = createdNode;
+    //                 }
+    //                 SceneGraph* createdSceneGraph = ecs_get_mut(world, createdNode, SceneGraph);
+    //                 createdSceneGraph->next = child;
+    //                 node->prev = createdNode; // Update the pushed node to point here
+    //                 // Now that the node is created...
+    //                 // Let's update the rest of the graph to account for the changes...
 
-                    // Iterate through all subsequent nodes and increment their index by one
-                    ecs_entity_t e = createdSceneGraph->next;
-                    while (ecs_is_valid(world, e))
-                    {
-                        SceneGraph* sc_next = ecs_get_mut(world, e, SceneGraph);
-                        sc_next->index++;
-                        e = sc_next->next;
-                    }
+    //                 // Iterate through all subsequent nodes and increment their index by one
+    //                 ecs_entity_t e = createdSceneGraph->next;
+    //                 while (ecs_is_valid(world, e))
+    //                 {
+    //                     SceneGraph* sc_next = ecs_get_mut(world, e, SceneGraph);
+    //                     sc_next->index++;
+    //                     e = sc_next->next;
+    //                 }
                     
-                    // printf("Entity %s has depth %d\n", ecs_get_name(world, createdNode), createdSceneGraph->depth);
+    //                 // printf("Entity %s has depth %d\n", ecs_get_name(world, createdNode), createdSceneGraph->depth);
 
-                    // Increase depth of all children by one
-                    e = createdSceneGraph->next;
-                    int same_depth_count = 0;
-                    while (ecs_is_valid(world, e))
-                    {
-                        SceneGraph* sc_next = ecs_get_mut(world, e, SceneGraph);
-                        // printf("Entity %s has depth %d\n", ecs_get_name(world, e), sc_next->depth);
-                        if (sc_next->depth <= createdSceneGraph->depth)
-                        {
-                            same_depth_count++;
-                            if (same_depth_count > 1)
-                            {
-                                break;
-                            }
-                            nodes[h_index] = e;
-                            parents[h_index] = createdNode;
-                            h_index++;
-                        }
-                        sc_next->depth++;
-                        // printf("UPDATE Entity %s now has depth %d\n", ecs_get_name(world, e), sc_next->depth);
-                        e = sc_next->next;
-                    }
+    //                 // Increase depth of all children by one
+    //                 e = createdSceneGraph->next;
+    //                 int same_depth_count = 0;
+    //                 while (ecs_is_valid(world, e))
+    //                 {
+    //                     SceneGraph* sc_next = ecs_get_mut(world, e, SceneGraph);
+    //                     // printf("Entity %s has depth %d\n", ecs_get_name(world, e), sc_next->depth);
+    //                     if (sc_next->depth <= createdSceneGraph->depth)
+    //                     {
+    //                         same_depth_count++;
+    //                         if (same_depth_count > 1)
+    //                         {
+    //                             break;
+    //                         }
+    //                         nodes[h_index] = e;
+    //                         parents[h_index] = createdNode;
+    //                         h_index++;
+    //                     }
+    //                     sc_next->depth++;
+    //                     // printf("UPDATE Entity %s now has depth %d\n", ecs_get_name(world, e), sc_next->depth);
+    //                     e = sc_next->next;
+    //                 }
 
-                    // Increase children_count of all parents by one
-                    e = createdSceneGraph->prev;
-                    int lowest_depth = createdSceneGraph->depth;
-                    ecs_entity_t first_parent = NULL;
-                    while (ecs_is_valid(world, e))
-                    {
-                        SceneGraph* sc_prev = ecs_get_mut(world, e, SceneGraph);
-                        if (sc_prev->depth < lowest_depth)
-                        {
-                            sc_prev->children_count++;
-                            if (!ecs_is_valid(world, first_parent))
-                            {
-                                first_parent = e;
-                                nodes[h_index] = createdNode;
-                                parents[h_index] = first_parent;
-                                h_index++;
-                            }
-                            lowest_depth = sc_prev->depth;
-                            // printf("UPDATE Entity %s now has children count %d\n", ecs_get_name(world, e), sc_prev->children_count);
-                        }
-                        e = sc_prev->prev;
-                    }
-                }
-            }
-            agent_i++;
-        }
-    }
-    for (int i = 0; i < h_index; i++)
-    {
-        ecs_add_pair(world, nodes[i], EcsChildOf, parents[i]);
-    }
+    //                 // Increase children_count of all parents by one
+    //                 e = createdSceneGraph->prev;
+    //                 int lowest_depth = createdSceneGraph->depth;
+    //                 ecs_entity_t first_parent = NULL;
+    //                 while (ecs_is_valid(world, e))
+    //                 {
+    //                     SceneGraph* sc_prev = ecs_get_mut(world, e, SceneGraph);
+    //                     if (sc_prev->depth < lowest_depth)
+    //                     {
+    //                         sc_prev->children_count++;
+    //                         if (!ecs_is_valid(world, first_parent))
+    //                         {
+    //                             first_parent = e;
+    //                             nodes[h_index] = createdNode;
+    //                             parents[h_index] = first_parent;
+    //                             h_index++;
+    //                         }
+    //                         lowest_depth = sc_prev->depth;
+    //                         // printf("UPDATE Entity %s now has children count %d\n", ecs_get_name(world, e), sc_prev->children_count);
+    //                     }
+    //                     e = sc_prev->prev;
+    //                 }
+    //             }
+    //         }
+    //         agent_i++;
+    //     }
+    // }
+    // for (int i = 0; i < h_index; i++)
+    // {
+    //     ecs_add_pair(world, nodes[i], EcsChildOf, parents[i]);
+    // }
 
-    ecs_entity_t message = ecs_set_name(world, 0, "message");
-    ecs_set(world, message, Renderable, {4000, true});
-    ecs_set_pair(world, message, Position, Local, {8, 8});
-    ecs_set_pair(world, message, Position, World, {0, 0});
-    char* msg_str = load_string_from_file("output.txt");
-    printf("%s\n", msg_str);
-    ecs_set(world, message, Paragraph, {
-        msg_str, // dynamically allocated string loaded from file
-        NULL, // surface
-        NULL, // texture
-        1,    // changed
-        400   // wrap_width
-    });
-    ecs_entity_t bdb = ecs_lookup_fullpath(world, "root.agents.bulwark_agent.bulwark.dialogue_box");
-    ecs_add_pair(world, message, EcsChildOf, bdb);
+    ecs_entity_t DialogueHistory = ecs_new_prefab(world, "dialogue_history");
+    ecs_set_pair(world, DialogueHistory, Position, World, {0, 0});
+    ecs_override_pair(world, DialogueHistory, ecs_id(Position), World);
+    ecs_set_pair(world, DialogueHistory, Position, Local, {0, 0});
+    ecs_override_pair(world, DialogueHistory, ecs_id(Position), Local);
+
+    ecs_entity_t dialogueFrame = ecs_new_entity(world, "dialogue_frame");
+    ecs_set_pair(world, dialogueFrame, Position, World, {0, 0});
+    ecs_set_pair(world, dialogueFrame, Position, World, {8, 264+138});
+
+    ecs_entity_t activeDialogueHistory = ecs_new_entity(world, "active_dialogue_history");
+    ecs_set(world, activeDialogueHistory, VerticalLayout, {8});
+    ecs_add_pair(world, activeDialogueHistory, EcsIsA, DialogueHistory);
+    ecs_add_pair(world, activeDialogueHistory, EcsChildOf, dialogueFrame);
+
+    ecs_entity_t DialogueItem = ecs_new_prefab(world, "DialogueItem");
+    ecs_add(world, DialogueItem, UIElementBounds);
+    ecs_set_pair(world, DialogueItem, Position, World, {0, 0});
+    ecs_override_pair(world, DialogueItem, ecs_id(Position), World);
+    ecs_set_pair(world, DialogueItem, Position, Relative, {0, 0});
+    ecs_override_pair(world, DialogueItem, ecs_id(Position), Relative); // TODO: Autogrant relative Position when placed into Layout
+    ecs_set_pair(world, DialogueItem, Position, Local, {0, 0});
+    ecs_override_pair(world, DialogueItem, ecs_id(Position), Local);
+        
+        ecs_entity_t DialogueBox = ecs_new_prefab(world, "DialogueBox");
+        ecs_set_pair(world, DialogueBox, Position, Local, {0, 0});
+        ecs_set_pair(world, DialogueBox, Position, World, {0, 0});
+        ecs_override_pair(world, DialogueBox, ecs_id(Position), World);
+        ecs_set(world, DialogueBox, Renderable, {100, true});
+        Sprite box = loadSprite(renderer, "../res/dialogue_box.png");
+        ecs_set(world, DialogueBox, Sprite, {box.texture, box.width, box.height});
+        ecs_add_pair(world, DialogueBox, EcsChildOf, DialogueItem);
+
+        ecs_entity_t DialogueAvatarIcon = ecs_new_prefab(world, "DialogueAvatarIcon");
+        ecs_set_pair(world, DialogueAvatarIcon, Position, Local, {417, 1}); // TODO: Expandable depending on dialogue length
+        ecs_set_pair(world, DialogueAvatarIcon, Position, World, {0, 0});
+        ecs_override_pair(world, DialogueAvatarIcon, ecs_id(Position), World);
+        ecs_set(world, DialogueAvatarIcon, Renderable, {40, true});
+        Sprite avatar = loadSprite(renderer, "../res/bulwark.png"); // TODO: This needs to be overriden per instance!
+        ecs_set(world, DialogueAvatarIcon, Sprite, {avatar.texture, avatar.width, avatar.height});
+        ecs_override(world, DialogueAvatarIcon, Sprite);
+        ecs_add_pair(world, DialogueAvatarIcon, EcsChildOf, DialogueItem);
+
+        ecs_entity_t DialogueMessage = ecs_new_prefab(world, "DialogueMessage");
+        ecs_set(world, DialogueMessage, Renderable, {4000, true});
+        ecs_set_pair(world, DialogueMessage, Position, Local, {8, 8});
+        ecs_set_pair(world, DialogueMessage, Position, World, {0, 0});
+        ecs_override_pair(world, DialogueMessage, ecs_id(Position), World);
+        // ecs_override(world, DialogueMessage, (Position, World));
+        // TODO: Paragraph Loader for text file, -> Figure out a format for 
+        ecs_set(world, DialogueMessage, ParagraphLoader, {"dialogue_bulwark_1.txt"});
+        ecs_override(world, DialogueMessage, ParagraphLoader);
+        char* msg_str = load_string_from_file("output.txt");
+        // printf("%s\n", msg_str);
+        ecs_set(world, DialogueMessage, Paragraph, {
+            msg_str, // dynamically allocated string loaded from file
+            NULL, // surface
+            NULL, // texture
+            1,    // changed
+            400   // wrap_width
+        });
+        ecs_add_pair(world, DialogueMessage, EcsChildOf, DialogueItem);
+
+    ecs_entity_t chatbox = ecs_new_entity(world, "chatbox");
+    ecs_set(world, chatbox, Renderable, {100, true});
+    ecs_set_pair(world, chatbox, Position, World, {6, 264+138});
+    Sprite chatsprite = loadSprite(renderer, "../res/chatbox.png");
+    ecs_set(world, chatbox, Sprite, {chatsprite.texture, chatsprite.width, chatsprite.height});
+    ecs_add(world, chatbox, UserChat);
+
+        ecs_entity_t tb = ecs_new(world, 0);
+        ecs_set(world, tb, Renderable, {100, true});
+        ecs_set_pair(world, tb, Position, Local, {8, 8});
+        ecs_set_pair(world, tb, Position, World, {0, 0});
+        ecs_set(world, tb, Text, {"", NULL, NULL, 1});
+        ecs_set(world, tb, Textbox, {0, 1});
+        ecs_add_pair(world, tb, EcsChildOf, chatbox);
+
+    ecs_entity_t UserChatItem = ecs_new_prefab(world, "UserChatItem");
+    ecs_add(world, UserChatItem, UIElementBounds);
+    ecs_set_pair(world, UserChatItem, Position, Relative, {0, 0});
+    ecs_override_pair(world, UserChatItem, ecs_id(Position), Relative);
+    ecs_set_pair(world, UserChatItem, Position, Local, {0, 0});
+    ecs_override_pair(world, UserChatItem, ecs_id(Position), Local);
+    ecs_set_pair(world, UserChatItem, Position, World, {0, 0});
+    ecs_override_pair(world, UserChatItem, ecs_id(Position), World);
+        
+        ecs_entity_t UserChatBox = ecs_new_prefab(world, "UserChatBox");
+        ecs_set_pair(world, UserChatBox, Position, Local, {0, 0});
+        ecs_set_pair(world, UserChatBox, Position, World, {0, 0});
+        ecs_override_pair(world, UserChatBox, ecs_id(Position), World);
+        ecs_set(world, UserChatBox, Renderable, {100, true});
+        ecs_set(world, UserChatBox, Box, {0, 0, 418, 64, FILL, {96, 96, 96, 255}});
+        ecs_add_pair(world, UserChatBox, EcsChildOf, UserChatItem);
+
+    // ecs_entity_t message = ecs_set_name(world, 0, "message");
+    // ecs_set(world, message, Renderable, {4000, true});
+    // ecs_set_pair(world, message, Position, Local, {8, 8});
+    // ecs_set_pair(world, message, Position, World, {0, 0});
+    // char* msg_str = load_string_from_file("output.txt");
+    // printf("%s\n", msg_str);
+    // ecs_set(world, message, Paragraph, {
+    //     msg_str, // dynamically allocated string loaded from file
+    //     NULL, // surface
+    //     NULL, // texture
+    //     1,    // changed
+    //     400   // wrap_width
+    // });
+    // ecs_entity_t bdb = ecs_lookup_fullpath(world, "root.agents.bulwark_agent.bulwark.dialogue_box");
+    // ecs_add_pair(world, message, EcsChildOf, bdb);
 
     ECS_SYSTEM(world, SetupSelectedNodeIndicator, EcsPostUpdate, Selected, Box, SceneGraph(parent), Text(parent));
     ECS_SYSTEM(world, Input, EcsPreUpdate, [inout] *());
@@ -1765,7 +1958,9 @@ int main(int argc, char *argv[]) {
         },
         .callback = TransformCascadeHierarchy
     });
+    ECS_SYSTEM(world, LayoutUpdatePositions, EcsPreUpdate, (Position, Local), (Position, Relative));
 
+    ECS_SYSTEM(world, UpdateParagraph, EcsOnUpdate, Paragraph, ParagraphLoader);
     ECS_SYSTEM(world, SceneGraphSettingsCascadeHierarchy, EcsPreFrame, ?SceneGraph(parent|cascade), SceneGraph);
 
     ECS_SYSTEM(world, TextboxEntry, EcsOnUpdate, Textbox, Text, EventTextInput(input));
@@ -1781,7 +1976,6 @@ int main(int argc, char *argv[]) {
     ECS_SYSTEM(world, TextboxClick, EcsOnUpdate, Textbox, Position, Size, EventMouseClick(input));
     ECS_SYSTEM(world, TextboxCursorBlink, EcsOnUpdate, Textbox, Cursor);
 
-    ECS_SYSTEM(world, GenTextTexture, EcsOnUpdate, Text, Renderable, Font(resource), SDL_Interface(sdl));
     ECS_SYSTEM(world, GenParagraphTexture, EcsOnUpdate, Paragraph, Renderable, Font(resource), SDL_Interface(sdl));
 
     // ECS_SYSTEM(world, Render, EcsPostFrame, (Position, World), Sprite, SDL_Interface(sdl));
@@ -1806,23 +2000,95 @@ int main(int argc, char *argv[]) {
         },
         .callback = RenderCommander
     });
+
     // ECS_SYSTEM(world, RenderBox, EcsPostFrame, (Position, World), Text, SceneGraph, SDL_Interface(sdl));
     // ECS_SYSTEM(world, RenderSelectedBox, EcsPostFrame, (Position, World), Text, SceneGraph, Selected, SDL_Interface(sdl));
     ECS_SYSTEM(world, RenderPresent, EcsPostFrame, SDL_Interface);
+
+    ECS_SYSTEM(world, UserChatSubmit, EcsOnUpdate, Textbox, Text, EventKeyInput(input), UserChat(parent), VerticalLayout(dialogue_frame.active_dialogue_history));
     
     ecs_query_t* qsc = ecs_query(world, {
-            .filter.expr = "[inout] (Position, World), SceneGraph, ?SceneGraph(parent)",
-            .order_by = (ecs_order_by_action_t)compare_sc_index,
-            .order_by_component = ecs_id(SceneGraph)
-        });
+        .filter.expr = "[inout] (Position, World), SceneGraph, ?SceneGraph(parent)",
+        .order_by = (ecs_order_by_action_t)compare_sc_index,
+        .order_by_component = ecs_id(SceneGraph)
+    });
 
+    ecs_query_t *qeb = ecs_query(world, {
+        .filter.terms = {
+            { .id = ecs_id(UIElementBounds) }, 
+        }
+    });
+
+    ecs_query_t *qvl = ecs_query(world, {
+        .filter.terms = {
+            { .id = ecs_id(VerticalLayout) }, 
+        }
+    });
+
+    int agentsCreated = 0;
     while (ecs_progress(world, 0)) {
 
-        char* updated_msg = load_string_from_file("output.txt");
-        // printf("%s\n", msg_str);
-        Paragraph* para = ecs_get_mut(world, message, Paragraph);
-        para->str = updated_msg;
-        para->changed = 1;
+        ecs_iter_t eb_it = ecs_query_iter(world, qeb);
+        while (ecs_query_next(&eb_it))
+        {
+            UIElementBounds* eb = ecs_field(&eb_it, UIElementBounds, 1);
+            for (int i = 0; i < eb_it.count; i++)
+            {
+                calculate_element_bounds_recursive(world, eb_it.entities[i], &eb[i]);
+            }
+            UIElementBounds* bounds = &eb[i];
+            // printf("Element Bounds: min_x = %d, max_x = %d, min_y = %d, max_y = %d\n", bounds->min_x, bounds->max_x, bounds->min_y, bounds->max_y);
+        }
+
+        ecs_iter_t vl_it = ecs_query_iter(world, qvl);
+        while (ecs_query_next(&vl_it))
+        {
+            VerticalLayout* vl = ecs_field(&vl_it, VerticalLayout, 1);
+            for (int i = 0; i < vl_it.count; i++)
+            {
+                int childIndex = 0;
+                int32_t height = 0;
+                ecs_iter_t it = ecs_children(vl_it.world, vl_it.entities[i]);
+                int childrenCount = 0;
+                while (ecs_children_next(&it)) {
+                    for (int c = 0; c < it.count; c++) {
+                        childrenCount++;
+                    }
+                }
+                // LayoutPos* positioner = calloc(sizeof(LayoutPos), childrenCount);
+                it = ecs_children(vl_it.world, vl_it.entities[i]);
+                while (ecs_children_next(&it)) {
+                    for (int c = 0; c < it.count; c++) {
+                        // TODO: VerticalLayout should probably place children within proxy child
+                        // TODO: Update child world pos?
+                        ecs_entity_t child = it.entities[c];
+                        if (ecs_is_valid(world, child))
+                        {
+                            Position* pos = ecs_get_mut_pair(world, child, Position, Relative);
+                            UIElementBounds* bounds = ecs_get_mut(world, child, UIElementBounds);
+                            if (pos && bounds)
+                            {
+                                // positioner[childIndex].height = height;
+                                // positioner[childIndex].e = child;
+                                pos->y = height;
+                                height += (-bounds->min_y + bounds->max_y) + vl[i].padding;
+                            }
+                            childIndex++;
+                        }
+                    }
+                }
+                Position* layoutPos = ecs_get_mut_pair(world, vl_it.entities[i], Position, Local);
+                layoutPos->y = -height;
+                
+                // printf("VerticalLayout has %d children\n", childrenCount);
+                // for (int u = 0; u < childrenCount; u++)
+                // {
+                //     Position* pos = ecs_get_mut_pair(world, positioner[u].e, Position, Relative);
+                //     printf("Pos Y is %d\n", pos->y);
+                //     pos->y = positioner[u].height;
+                // }
+            }
+        }
 
         ecs_iter_t sc_it = ecs_query_iter(world, qsc);
         int visible_index = 0;
@@ -1852,7 +2118,82 @@ int main(int argc, char *argv[]) {
                 }
             }
         }
+
+        fd_set fds;
+        struct timeval tv;
+        int ret;
+
+        // Initialize file descriptor set
+        FD_ZERO(&fds);
+        FD_SET(fd, &fds);
+
+        // Set timeout to 0, so select will not block
+        tv.tv_sec = 0;
+        tv.tv_usec = 0;
+
+        ret = select(fd + 1, &fds, NULL, NULL, &tv);
+
+        // If ret > 0, there are events to be processed
+        if (ret > 0 && FD_ISSET(fd, &fds)) {
+            i = 0;
+            length = read(fd, buffer, BUF_LEN);
+
+            if (length < 0) {
+                perror("read");
+            }
+
+            while (i < length) {
+                struct inotify_event *event = (struct inotify_event *) &buffer[i];
+                if (event->len) {
+                    if (event->mask & IN_CREATE) {
+                        if (!(event->mask & IN_ISDIR)) {
+                            printf("New file %s created.\n", event->name);
+                            // Extract the agent name from the file name
+                            char* filename = strdup(event->name);
+                            char* agent_name = strtok(filename, "_");
+                            agent_name = strtok(NULL, "_");
+
+                            printf("Agent: %s\n", agent_name);
+                            
+                            ecs_entity_t agentDialogue = ecs_new_entity(world, 0);
+                            ecs_add_pair(world, agentDialogue, EcsIsA, DialogueItem);
+
+                            // ecs_set_pair(world, agentDialogue, Position, World, {6, agentsCreated*138});
+                            printf("Set agent at pos y %d", agentsCreated*138);
+                            ecs_set_pair(world, agentDialogue, Position, Local, {6, agentsCreated*138});
+                            Sprite* agent = ecs_get_mut(world, ecs_lookup_child(world, agentDialogue, "DialogueAvatarIcon"), Sprite);
+                            char agent_path[128];
+                            sprintf(agent_path, "../res/%s.png", agent_name);
+                            Sprite agentSprite = loadSprite(renderer, agent_path);
+                            agent->texture = agentSprite.texture;
+                            agent->width = agentSprite.width;
+                            agent->height = agentSprite.height;
+
+                            // char dialogue_file_path[128];
+                            // sprintf(dialogue_file_path, "dialogue_%s_%d.txt", agent_name, agentsCreated);
+                            printf("Original filename: %s\n", event->name);
+                            ParagraphLoader* agent_paragraph_loader = ecs_get_mut(world, ecs_lookup_child(world, agentDialogue, "DialogueMessage"), ParagraphLoader);
+                            agent_paragraph_loader->filepath = malloc(strlen(event->name) + 1); // Allocate memory
+                            strcpy(agent_paragraph_loader->filepath, event->name); // Copy the string
+                            printf("Stored filepath: %s\n", agent_paragraph_loader->filepath);
+                            free(filename);
+
+                            // TODO: Figure out why the prefab being added to a parent is not properly propagating positions...
+                            // Position* hip = ecs_get_mut_pair(world, ecs_lookup(world, "dialogue_history"), Position, World);
+                            // hip->y = hip->y - 138;
+                            // ecs_add_pair(world, agentDialogue, EcsChildOf, dialogueHistory);
+                            agentsCreated++;
+                        }
+                    }
+                }
+                i += EVENT_SIZE + event->len;
+            }
+        }
+
     }
+
+    inotify_rm_watch(fd, wd);
+    close(fd);
 
     return ecs_fini(world);
 }
