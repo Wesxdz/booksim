@@ -24,6 +24,7 @@
 		"ratio": "c",
 		"system_error": "c",
 		"functional": "c",
-		"type_traits": "c"
+		"type_traits": "c",
+		"*.tcc": "c"
 	}
 }

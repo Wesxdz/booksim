@@ -17,8 +17,11 @@ What can't it do in terms of reading books at human level?
 https://psychonautwiki.org/wiki/Subjective_effect_index
 For example LLMs feel no pain, have unknown consciousness, can they experience subjective effects?
 Hypothesis: Reading
-
-
+Vernor Vinge + A User's Guide to Vacuum Technology (ie pair fiction and nonfiction)
+Personality Engineering
+Wikipedia references to everything
+Original observeration
+GPT4 is unsustainable
 
 Automate coding
 Lookup documentation (recursively summarizing)
@@ -27,3 +30,5 @@ Once proof is verified, integrate
 
 ZeroC with Flecs
 ie (zero concept for ECS implementation)
+
+Reading fiction vs non-fiction PASTA paradigm

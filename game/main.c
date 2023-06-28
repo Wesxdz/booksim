@@ -40,6 +40,25 @@ ECS_STRUCT(SceneGraph,
 ECS_STRUCT(VerticalLayout,
 {
     int32_t padding;
+    int32_t children_count;
+    int32_t height;
+});
+
+ECS_STRUCT(LayoutNavigator,
+{
+    float interpolation_rate;
+    float scroll_pos;
+    float target_scroll_pos;
+});
+
+ECS_STRUCT(SequenceLayoutItem,
+{
+    int32_t order;
+});
+
+ECS_STRUCT(UserChatRequest,
+{
+    char* content;
 });
 
 // Dynamically calculate bounds of all descendent elements
@@ -60,6 +79,18 @@ ECS_TAG_DECLARE(Background);
 ECS_ENUM(ScopeIndicator, {
     EXPANDED,
     REDUCED
+});
+
+ECS_ENUM(HorizontalAlign, {
+    LEFT,
+    CENTER,
+    RIGHT
+});
+
+ECS_ENUM(VerticalAlign, {
+    TOP,
+    MIDDLE,
+    BOTTOM
 });
 
 ECS_STRUCT(ArrowStatus, {
@@ -92,6 +123,14 @@ ECS_STRUCT(Box, {
     BoxMode mode;
     Color color;
 });
+
+ECS_STRUCT(ArcSegment, {
+    int32_t minRadius;
+    int32_t maxRadius;
+    double startAngle;
+    double endAngle;
+});
+
 
 ECS_TAG_DECLARE(World);
 ECS_TAG_DECLARE(Local);
@@ -194,7 +233,6 @@ ECS_STRUCT(Cursor, {
 ECS_STRUCT(ConsumeEvent, {
     bool mock;
 });
-
 
 ECS_STRUCT(Text, {
     char str[256]; // https://github.com/SanderMertens/flecs/blob/master/examples/c/entities/hooks/src/main.c
@@ -429,6 +467,19 @@ void LayoutUpdatePositions(ecs_iter_t *it) {
     }
 }
 
+void LayoutDeterminePositions(ecs_iter_t* it)
+{
+    Position* relative_pos = ecs_field(it, Position, 1);
+    UIElementBounds* bounds = ecs_field(it, UIElementBounds, 2);
+    VerticalLayout* vl = ecs_field(it, VerticalLayout, 4);
+    for (int i = 0; i < it->count; i++)
+    {
+        relative_pos[i].y = vl->height;
+        vl->height += (-bounds[i].min_y + bounds[i].max_y) + vl->padding;
+        // printf("Height is %d\n", vl->height);
+    }
+}
+
 void SceneGraphSettingsCascadeHierarchy(ecs_iter_t *it) {
     // printf("SceneGraphSettingsCascadeHierarchy\n");
     SceneGraph* sc_parent = ecs_field(it, SceneGraph, 1);
@@ -548,13 +599,12 @@ void UserChatSubmit(ecs_iter_t* it)
         ecs_entity_t UserChatItem = ecs_lookup_fullpath(it->world, "UserChatItem");;
         ecs_entity_t chatItemInst = ecs_new_w_pair(it->world, EcsIsA, UserChatItem);
         ecs_entity_t UserChatMessage = ecs_lookup_child(it->world, UserChatItem, "UserChatMessage");
-        ecs_entity_t childTarget = ecs_get_target(it->world, chatItemInst, UserChatMessage, 0); // TODO: This line doesn't work :(
 
         ecs_entity_t adh = ecs_lookup_fullpath(it->world, "dialogue_frame.active_dialogue_history");
         ecs_add_pair(it->world, chatItemInst, EcsChildOf, adh);
 
         ecs_entity_t chat = ecs_new(it->world, 0);
-        ecs_set(it->world, chat, ChatCreated, {it->entities[0], chatItemInst});
+        ecs_set(it->world, chat, ChatCreated, {it->entities[0], chatItemInst}); // TODO: Refactor to defer instead of using ChatCreated
     }
 }
 
@@ -574,6 +624,9 @@ void UserChatCreate(ecs_iter_t* it)
         memset(text->str, 0, len);
         text->changed = true;
         ecs_delete(it->world, it->entities[0]);
+        ecs_entity_t e = ecs_new(it->world, 0);
+        ecs_add(it->world, e, UserChatRequest);
+        ecs_add(it->world, chat->chatItem, SequenceLayoutItem);
     }
 }
 
@@ -610,6 +663,117 @@ void FontRemove(ecs_iter_t *it) {
     }
 }
 
+void set_pixel(SDL_Surface *surface, int x, int y, Uint32 pixel)
+{
+    Uint32 *target_pixel = (Uint32 *)((Uint8 *)surface->pixels + y * surface->pitch + x * sizeof *target_pixel);
+    *target_pixel = pixel;
+}
+
+float is_in_arc(int x, int y, int centerX, int centerY, int minRadius, int maxRadius, double startAngle, double endAngle, int aliasStrength)
+{
+    int dx = x - centerX;
+    int dy = y - centerY;
+    double distance = sqrt(dx * dx + dy * dy);
+
+    // Check if the point is outside the ring
+    if (distance < minRadius - aliasStrength || distance > maxRadius + aliasStrength) {
+        return 0;
+    }
+
+    // Check if the point is inside the arc
+    double angle = atan2(dy, dx);
+    if (angle < 0) {
+        angle += 2 * M_PI;
+    }
+    if (!(startAngle <= angle && angle <= endAngle)) {
+        return 0;
+    }
+
+    // Compute the opacity for anti-aliasing
+    if (distance < minRadius) {
+        return 1 - (minRadius - distance) / aliasStrength;
+    } else if (distance > maxRadius) {
+        return 1 - (distance - maxRadius) / aliasStrength;
+    } else {
+        return 1;
+    }
+}
+
+
+void drawArcSegment(SDL_Surface* surface, int centerX, int centerY, int radius, double startAngle, double endAngle, Uint32 color)
+{
+    startAngle *= M_PI / 180;  // Convert to radians
+    endAngle *= M_PI / 180;
+
+    for (double angle = startAngle; angle < endAngle; angle += 0.01)
+    {
+        int x = centerX + radius * cos(angle);
+        int y = centerY + radius * sin(angle);
+
+        set_pixel(surface, x, y, color);
+    }
+}
+
+void fillArcSegment(SDL_Surface* surface, int centerX, int centerY, int minRadius, int maxRadius, double startAngle, double endAngle, Uint32 color, int aliasStrength)
+{
+    startAngle *= M_PI / 180;  // Convert to radians
+    endAngle *= M_PI / 180;
+
+    Uint8 r, g, b, a;
+    SDL_GetRGBA(color, surface->format, &r, &g, &b, &a);
+
+    for (int x = centerX - maxRadius; x <= centerX + maxRadius; x++) {
+        for (int y = centerY - maxRadius; y <= centerY + maxRadius; y++) {
+            float opacity = is_in_arc(x, y, centerX, centerY, minRadius, maxRadius, startAngle, endAngle, aliasStrength);
+            if (opacity > 0) {
+                Uint32 pixelColor = SDL_MapRGBA(surface->format, r, g, b, a * opacity);
+                set_pixel(surface, x, y, pixelColor);
+            }
+        }
+    }
+}
+
+
+void ArcSegmentBlit(ecs_iter_t *it) {
+    ArcSegment *arc = ecs_field(it, ArcSegment, 1);
+    Sprite *sprite = ecs_field(it, Sprite, 2);
+    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 3);
+
+    for (int i = 0; i < it->count; i++) {
+        // Compute the size of the surface
+        int32_t size = 2 * arc[i].maxRadius + 1;
+
+        // Create an SDL_Surface to draw the arc
+        SDL_Surface *surface = SDL_CreateRGBSurface(0, size, size, 32, 0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000);
+        if (surface == NULL) {
+            fprintf(stderr, "Failed to create surface: %s\n", SDL_GetError());
+            continue;
+        }
+
+        // Draw the arc on the surface
+        Uint32 color = SDL_MapRGBA(surface->format, 255, 255, 255, 255);
+        fillArcSegment(surface, arc[i].maxRadius, arc[i].maxRadius, arc[i].minRadius, arc[i].maxRadius, arc[i].startAngle, arc[i].endAngle, color, 1);
+
+        // Create an SDL_Texture from the surface
+        SDL_Texture *texture = SDL_CreateTextureFromSurface(sdl->renderer, surface);
+        if (texture == NULL) {
+            fprintf(stderr, "Failed to create texture: %s\n", SDL_GetError());
+            SDL_FreeSurface(surface);
+            continue;
+        }
+
+        // Store the texture in the sprite component
+        if (sprite[i].texture != NULL) {
+            SDL_DestroyTexture(sprite[i].texture);
+        }
+        sprite[i].texture = texture;
+        sprite[i].width = size;
+        sprite[i].height = size;
+
+        // Free the surface
+        SDL_FreeSurface(surface);
+    }
+}
 
 void TextboxClick(ecs_iter_t* it) {
     Textbox* tb = ecs_field(it, Textbox, 1);
@@ -767,7 +931,6 @@ void ToggleSceneGraphHierarchy(ecs_iter_t* it)
     }
 }
 
-
 void ConsumeEvents(ecs_iter_t* it)
 {
     ecs_entity_t pair = ecs_field_id(it, 1);
@@ -856,6 +1019,19 @@ void UpdateTextSurface(ecs_iter_t *it) {
     }
 }
 
+void SequenceLayoutOrder(ecs_iter_t* it)
+{
+    SequenceLayoutItem* sli = ecs_field(it, SequenceLayoutItem, 2);
+    VerticalLayout* vl = ecs_field(it, VerticalLayout, 3);
+    for (int i = 0; i < it->count; i++)
+    {
+        printf("SequenceLayoutItem added to entity\n");
+        sli->order = vl->children_count;
+        // ecs_set(it->world, it->entities[i], SequenceLayoutItem, {vl->children_count});
+        vl->children_count++; // TODO: Calculate by counting children?
+    }
+}
+
 void SetupSelectedNodeIndicator(ecs_iter_t* it)
 {
     Box* b = ecs_field(it, Box, 2);
@@ -871,6 +1047,38 @@ void SetupSelectedNodeIndicator(ecs_iter_t* it)
         b[i].h = txtHeight-1;
     }
 }
+
+void MouseWheelScrollLayout(ecs_iter_t* it)
+{
+    Position* local_pos = ecs_field(it, Position, 1);
+    EventMouseWheel* event = ecs_field(it, EventMouseWheel, 3);
+
+    for (int i = 0; i < it->count; i++)
+    {
+        printf("Scroll layout %d\n", local_pos[i].y);
+        printf("Scroll layout %d\n", event->y*16.0f);
+        local_pos[i].y += event->y*16;
+    }
+}
+
+void ArrowKeyScrollLayout(ecs_iter_t* it)
+{
+    Position* local_pos = ecs_field(it, Position, 1);
+    EventKeyInput* event = ecs_field(it, EventKeyInput, 3);
+
+    for (int i = 0; i < it->count; i++)
+    {
+        printf("Arrow key scroll layout %d\n", local_pos[i].y);
+        
+        // Check which arrow key was pressed
+        if (event->keycode == SDLK_UP) {
+            local_pos[i].y -= 16;
+        } else if (event->keycode == SDLK_DOWN) {
+            local_pos[i].y += 16;
+        }
+    }
+}
+
 
 void KeyNavSceneGraph(ecs_iter_t* it)
 {
@@ -992,6 +1200,24 @@ void UpdateSymbolBackground(ecs_iter_t* it)
     }
 }
 
+void AgentRespond(ecs_iter_t* it)
+{
+    // TODO: Implement!
+    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 2);
+    const char* agents[] = {
+    "bulwark",
+    "ember",
+    "impasse",
+    "cascade",
+    "ivory",
+    "vortice"
+    };
+    int num_agents = sizeof(agents) / sizeof(agents[0]);
+    const char* agent = agents[rand() % num_agents];
+    create_mock_dialogue(it->world, sdl->renderer, agent);
+    ecs_delete(it->world, it->entities[0]);
+}
+
 bool isValidTexture(SDL_Texture *texture) {
     int queryResult = SDL_QueryTexture(texture, NULL, NULL, NULL, NULL);
     return queryResult == 0;
@@ -1081,7 +1307,6 @@ void RenderCommander(ecs_iter_t* it)
     }
 }
 
-
 void RenderPresent(ecs_iter_t *it)
 {
     SDL_Interface* sdl = ecs_field(it, SDL_Interface, 1);
@@ -1092,7 +1317,6 @@ void RenderPresent(ecs_iter_t *it)
         SDL_RenderClear(sdl[i].renderer);
     }
 }
-
 
 bool hasNamedAncestor(ase_layer_t* layer, const char* name) {
     // Base case: if there's no parent, return false
@@ -1483,6 +1707,31 @@ void calculate_element_bounds_recursive(ecs_world_t* world, ecs_entity_t root, U
     }
 }
 
+void create_mock_dialogue(ecs_world_t* world, SDL_Renderer* renderer, char* agent_name)
+{
+    ecs_entity_t DialogueItem = ecs_lookup_fullpath(world, "DialogueItem");
+    ecs_defer_suspend(world);
+    ecs_entity_t agentDialogue = ecs_new_w_pair(world, EcsIsA, DialogueItem);
+    // ecs_entity_t agentDialogue = ecs_new(world, 0);
+    ecs_add_pair(world, agentDialogue, EcsChildOf, ecs_lookup_fullpath(world, "dialogue_frame.active_dialogue_history"));
+    // ecs_add_pair(world, agentDialogue, EcsIsA, DialogueItem);
+
+    Sprite* agent = ecs_get_mut(world, ecs_lookup_child(world, agentDialogue, "DialogueAvatarIcon"), Sprite);
+    char agent_path[128];
+    sprintf(agent_path, "../res/%s.png", agent_name);
+    Sprite agentSprite = loadSprite(renderer, agent_path);
+    agent->texture = agentSprite.texture;
+    agent->width = agentSprite.width;
+    agent->height = agentSprite.height;
+
+    char* file_name = "mock.txt";
+    ParagraphLoader* agent_paragraph_loader = ecs_get_mut(world, ecs_lookup_child(world, agentDialogue, "DialogueMessage"), ParagraphLoader);
+    agent_paragraph_loader->filepath = malloc(strlen(file_name) + 1); // Allocate memory
+    strcpy(agent_paragraph_loader->filepath, file_name); // Copy the string
+    ecs_add(world, agentDialogue, SequenceLayoutItem);
+    ecs_defer_resume(world);
+}
+
 void update_bounds(ecs_world_t* world, ecs_entity_t entity, UIElementBounds* bounds)
 {
     Position* localPos = ecs_get_mut_pair(world, entity, Position, Local);
@@ -1557,6 +1806,18 @@ int compare_sc_index(
     return (sc1->index > sc2->index) - (sc1->index < sc2->index);
 }
 
+int compare_order(
+    ecs_entity_t e1,
+    const SequenceLayoutItem *s1,
+    ecs_entity_t e2,
+    const SequenceLayoutItem *s2)
+{
+    (void)e1;
+    (void)e2;
+    return (s1->order > s2->order) - (s1->order < s2->order);
+}
+
+
 typedef struct LayoutPos
 {
     ecs_entity_t e;
@@ -1595,6 +1856,8 @@ int main(int argc, char *argv[]) {
     ECS_META_COMPONENT(world, Movable);
     ECS_META_COMPONENT(world, Color);
     ECS_META_COMPONENT(world, ScopeIndicator);
+    ECS_META_COMPONENT(world, HorizontalAlign);
+    ECS_META_COMPONENT(world, VerticalAlign);
     ECS_META_COMPONENT(world, EventMouseClick);
     ECS_META_COMPONENT(world, Stats);
     ECS_META_COMPONENT(world, ConsumeEvent);
@@ -1614,9 +1877,13 @@ int main(int argc, char *argv[]) {
     ECS_META_COMPONENT(world, Line);
     ECS_META_COMPONENT(world, BoxMode);
     ECS_META_COMPONENT(world, Box);
+    ECS_META_COMPONENT(world, ArcSegment);
     ECS_META_COMPONENT(world, ArrowStatus);
     ECS_META_COMPONENT(world, VerticalLayout);
     ECS_META_COMPONENT(world, UIElementBounds);
+    ECS_META_COMPONENT(world, SequenceLayoutItem);
+    ECS_META_COMPONENT(world, UserChatRequest);
+    ECS_META_COMPONENT(world, LayoutNavigator);
 
     ECS_COMPONENT_DEFINE(world, TestNormal);
     ECS_COMPONENT_DEFINE(world, Font);
@@ -1663,8 +1930,8 @@ int main(int argc, char *argv[]) {
     }
     int width = dm.w;
     int height = dm.h;
-    // SDL_Window* window = SDL_CreateWindow("Book Simulator Online", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_FULLSCREEN_DESKTOP);
-    SDL_Window* window = SDL_CreateWindow("Book Simulator Online", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, ase->w, ase->h, SDL_WINDOW_SHOWN);
+    SDL_Window* window = SDL_CreateWindow("Book Simulator Online", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_FULLSCREEN_DESKTOP);
+    // SDL_Window* window = SDL_CreateWindow("Book Simulator Online", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, ase->w, ase->h, SDL_WINDOW_SHOWN);
     if (!window) {
         printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
         return -1;
@@ -1682,16 +1949,50 @@ int main(int argc, char *argv[]) {
         exit(2);
     }
 
+    // ECS_OBSERVER(world, AgentRespond, EcsOnSet, UserChatRequest);
     ECS_OBSERVER(world, FontSet, EcsOnAdd, Font);
     ECS_OBSERVER(world, FontRemove, EcsOnRemove, Font);
+    // Why is this observer not called for DialogueItem entity?
+    // ECS_OBSERVER(world, SequenceLayoutOrder, EcsOnSet, (Position, Relative), [out] SequenceLayoutItem, [inout] VerticalLayout(parent));
+    ECS_OBSERVER(world, SequenceLayoutOrder, EcsOnAdd, (Position, Relative), [out] SequenceLayoutItem, [inout] VerticalLayout(parent));
 
     ecs_entity_t resource = ecs_set_name(world, 0, "resource");
     ecs_add(world, resource, Font);
 
     ecs_entity_t sdl = ecs_set_name(world, 0, "sdl");
     ecs_set(world, sdl, SDL_Interface, {window, renderer});
-    
+
+    ecs_entity_t SystemLoop = ecs_new_prefab(world, "SystemLoop");
+    ecs_set_pair(world, SystemLoop, Position, World, {0, 0});
+    ecs_override_pair(world, SystemLoop, ecs_id(Position), World);
+
+    ecs_entity_t Transformable = ecs_new_prefab(world, "Transformable");
+    ecs_set_pair(world, Transformable, Position, Local, {0, 0});
+    ecs_set_pair(world, Transformable, Position, World, {0, 0});
+    ecs_override_pair(world, Transformable, ecs_id(Position), Local);
+    ecs_override_pair(world, Transformable, ecs_id(Position), World);
+
+    ecs_entity_t SystemSegment = ecs_new_prefab(world, "SystemSegment");
+    ecs_add_pair(world, SystemSegment, EcsIsA, Transformable);
+
+    ecs_set(world, SystemSegment, ArcSegment, {96, 128, 0, 360});
+    ecs_add(world, SystemSegment, Sprite);
+    ecs_set(world, SystemSegment, Renderable, {0, true});
+
+    ecs_entity_t SystemName = ecs_new_prefab(world, "SystemName");
+    ecs_add_pair(world, SystemName, EcsIsA, Transformable);
+    ecs_set(world, SystemName, Text, {"SystemName", NULL, NULL, 1});
+    ecs_set(world, SystemName, Renderable, {10, true});
+    ecs_add_pair(world, SystemName, EcsChildOf, SystemSegment);
+    ecs_add_pair(world, SystemName, EcsSlotOf, SystemSegment);
+
+    ECS_OBSERVER(world, ArcSegmentBlit, EcsOnSet, ArcSegment, Sprite, SDL_Interface(sdl));
     ECS_OBSERVER(world, GenTextTexture, EcsOnSet, Text, Renderable, Font(resource), SDL_Interface(sdl));
+
+    ecs_entity_t exampleSegment = ecs_new_w_pair(world, EcsIsA, SystemSegment);
+    // TODO: Code that outputs pipeline stages with their sytems in call order
+    // Either Flecs reflection or Clang
+    
     // ECS_OBSERVER(world, GenParagraphTexture, EcsOnSet, Paragraph, Renderable, Font(resource), SDL_Interface(sdl));
 
     // parseAsepriteFile(ase, world, sceneGraph, renderer, window);
@@ -1865,7 +2166,7 @@ int main(int argc, char *argv[]) {
     ecs_set_pair(world, dialogueFrame, Position, World, {8, 264+138});
 
     ecs_entity_t activeDialogueHistory = ecs_new_entity(world, "active_dialogue_history");
-    ecs_set(world, activeDialogueHistory, VerticalLayout, {8});
+    ecs_set(world, activeDialogueHistory, VerticalLayout, {8, 0});
     ecs_add_pair(world, activeDialogueHistory, EcsIsA, DialogueHistory);
     ecs_add_pair(world, activeDialogueHistory, EcsChildOf, dialogueFrame);
 
@@ -1874,7 +2175,7 @@ int main(int argc, char *argv[]) {
     ecs_set_pair(world, DialogueItem, Position, World, {0, 0});
     ecs_override_pair(world, DialogueItem, ecs_id(Position), World);
     ecs_set_pair(world, DialogueItem, Position, Relative, {0, 0});
-    ecs_override_pair(world, DialogueItem, ecs_id(Position), Relative); // TODO: Autogrant relative Position when placed into Layout
+    ecs_override_pair(world, DialogueItem, ecs_id(Position), Relative);
     ecs_set_pair(world, DialogueItem, Position, Local, {0, 0});
     ecs_override_pair(world, DialogueItem, ecs_id(Position), Local);
         
@@ -1942,7 +2243,7 @@ int main(int argc, char *argv[]) {
     ecs_override_pair(world, UserChatItem, ecs_id(Position), World);
         
         ecs_entity_t UserChatBox = ecs_new_prefab(world, "UserChatBox");
-        ecs_set_pair(world, UserChatBox, Position, Local, {0, 0});
+        ecs_set_pair(world, UserChatBox, Position, Local, {80, 0});
         ecs_set_pair(world, UserChatBox, Position, World, {0, 0});
         ecs_override_pair(world, UserChatBox, ecs_id(Position), World);
         ecs_set(world, UserChatBox, Renderable, {100, true});
@@ -1950,8 +2251,16 @@ int main(int argc, char *argv[]) {
         ecs_add_pair(world, UserChatBox, EcsChildOf, UserChatItem);
         ecs_add_pair(world, UserChatBox, EcsSlotOf, UserChatItem);
 
+        ecs_entity_t UserSelfContext = ecs_new_prefab(world, "UserSelfContext");
+        ecs_set_pair(world, UserSelfContext, Position, Local, {0, 0});
+        ecs_set_pair(world, UserSelfContext, Position, World, {0, 0});
+        ecs_override_pair(world, UserSelfContext, ecs_id(Position), World);
+        ecs_set(world, UserSelfContext, Renderable, {100, true});
+        ecs_set(world, UserSelfContext, Box, {0, 0, 80, 64, FILL, {48, 48, 48, 255}});
+        ecs_add_pair(world, UserSelfContext, EcsChildOf, UserChatItem);
+
         ecs_entity_t UserChatMessage = ecs_new_prefab(world, "UserChatMessage");
-        ecs_set_pair(world, UserChatMessage, Position, Local, {8, 8});
+        ecs_set_pair(world, UserChatMessage, Position, Local, {88, 8});
         ecs_set_pair(world, UserChatMessage, Position, World, {0, 0});
         ecs_override_pair(world, UserChatMessage, ecs_id(Position), World);
         ecs_set(world, UserChatMessage, Renderable, {100, true});
@@ -1959,22 +2268,18 @@ int main(int argc, char *argv[]) {
         ecs_add_pair(world, UserChatMessage, EcsChildOf, UserChatItem);
         ecs_add_pair(world, UserChatMessage, EcsSlotOf, UserChatItem);
 
-    // ecs_entity_t message = ecs_set_name(world, 0, "message");
-    // ecs_set(world, message, Renderable, {4000, true});
-    // ecs_set_pair(world, message, Position, Local, {8, 8});
-    // ecs_set_pair(world, message, Position, World, {0, 0});
-    // char* msg_str = load_string_from_file("output.txt");
-    // printf("%s\n", msg_str);
-    // ecs_set(world, message, Paragraph, {
-    //     msg_str, // dynamically allocated string loaded from file
-    //     NULL, // surface
-    //     NULL, // texture
-    //     1,    // changed
-    //     400   // wrap_width
-    // });
-    // ecs_entity_t bdb = ecs_lookup_fullpath(world, "root.agents.bulwark_agent.bulwark.dialogue_box");
-    // ecs_add_pair(world, message, EcsChildOf, bdb);
-
+    // ECS_SYSTEM(world, AgentRespond, EcsPreUpdate, UserChatRequest, SDL_Interface(sdl));
+    ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "AgentRespond",
+            .add = { ecs_dependson(EcsPreUpdate) }
+        }),
+        .query = {
+            .filter.expr = "UserChatRequest, SDL_Interface(sdl)"
+        },
+        .callback = AgentRespond,
+        .no_readonly = true
+    });
     ECS_SYSTEM(world, SetupSelectedNodeIndicator, EcsPostUpdate, Selected, Box, SceneGraph(parent), Text(parent));
     ECS_SYSTEM(world, Input, EcsPreUpdate, [inout] *());
     ECS_SYSTEM(world, MouseMovableSelection, EcsPostUpdate, Movable(parent), Position(parent, World), (Position, World), Sprite, EventMouseClick(input));
@@ -1997,7 +2302,37 @@ int main(int argc, char *argv[]) {
         },
         .callback = TransformCascadeHierarchy
     });
-    ECS_SYSTEM(world, LayoutUpdatePositions, EcsPreUpdate, (Position, Local), (Position, Relative));
+
+    ecs_system(world, {
+    .entity = ecs_entity(world, {
+        .name = "LayoutDeterminePositions",
+        .add = { ecs_dependson(EcsPreUpdate) }
+    }),
+    .query.filter.expr = "(Position, Relative), UIElementBounds, SequenceLayoutItem, VerticalLayout(parent)",
+    // .query.filter.terms = {
+    //     {.id = ecs_pair(ecs_id(Position), Relative), .inout = EcsInOut },
+    //     {.id = ecs_id(UIElementBounds), .inout = EcsIn },
+    //     {.id = ecs_id(SequenceLayoutItem) },
+    // },
+    .query.order_by = (ecs_order_by_action_t)compare_order,
+    .query.order_by_component = ecs_id(SequenceLayoutItem),
+    .callback = LayoutDeterminePositions
+    });
+    // ECS_SYSTEM(world, LayoutUpdatePositions, EcsPreUpdate, (Position, Local), (Position, Relative));
+    ecs_system(world, {
+    .entity = ecs_entity(world, {
+        .name = "LayoutUpdatePositions",
+        .add = { ecs_dependson(EcsPreUpdate) }
+    }),
+    .query.filter.terms = {
+        {.id = ecs_pair(ecs_id(Position), Local), .inout = EcsInOut },
+        {.id = ecs_pair(ecs_id(Position), Relative), .inout = EcsIn },
+        {.id = ecs_id(SequenceLayoutItem) },
+    },
+    .query.order_by = (ecs_order_by_action_t)compare_order,
+    .query.order_by_component = ecs_id(SequenceLayoutItem),
+    .callback = LayoutUpdatePositions
+    });
 
     ECS_SYSTEM(world, UpdateParagraph, EcsOnUpdate, Paragraph, ParagraphLoader);
     ECS_SYSTEM(world, SceneGraphSettingsCascadeHierarchy, EcsPreFrame, ?SceneGraph(parent|cascade), SceneGraph);
@@ -2007,6 +2342,8 @@ int main(int argc, char *argv[]) {
 
     ECS_SYSTEM(world, ToggleSceneGraphHierarchy, EcsOnUpdate, [inout] SceneGraph(parent), Selected, EventKeyInput(input));
     ECS_SYSTEM(world, KeyNavSceneGraph, EcsOnUpdate, SceneGraph(parent), Selected, EventKeyInput(input), Text(component_editor));
+    ECS_SYSTEM(world, MouseWheelScrollLayout, EcsOnUpdate, (Position, Local), VerticalLayout, EventMouseWheel(input));
+    ECS_SYSTEM(world, ArrowKeyScrollLayout, EcsOnUpdate, (Position, Local), VerticalLayout, EventKeyInput(input));
     ECS_SYSTEM(world, MouseWheelNavSceneGraph, EcsOnUpdate, SceneGraph(parent), Selected, EventMouseWheel(input));
     ECS_SYSTEM(world, UpdateArrowDirection, EcsPostUpdate, SceneGraph(parent), (Position, Local), Sprite, ArrowStatus, SDL_Interface(sdl));
     ECS_SYSTEM(world, UpdateSceneGraphLines, EcsPostUpdate, SceneGraph);
@@ -2045,7 +2382,7 @@ int main(int argc, char *argv[]) {
     ECS_SYSTEM(world, RenderPresent, EcsPostFrame, SDL_Interface);
 
     ECS_SYSTEM(world, UserChatSubmit, EcsOnUpdate, Textbox, Text, EventKeyInput(input), UserChat(parent), VerticalLayout(dialogue_frame.active_dialogue_history));
-    ECS_SYSTEM(world, UserChatCreate, EcsPostUpdate, ChatCreated, [out] Paragraph(), [out] Text());
+    ECS_SYSTEM(world, UserChatCreate, EcsPostFrame, ChatCreated, [out] Paragraph(), [out] Text());
     // ecs_system(world, {
     //     .entity = ecs_entity(world, {
     //         .name = "UserChatSubmit",
@@ -2097,39 +2434,41 @@ int main(int argc, char *argv[]) {
             VerticalLayout* vl = ecs_field(&vl_it, VerticalLayout, 1);
             for (int i = 0; i < vl_it.count; i++)
             {
-                int childIndex = 0;
-                int32_t height = 0;
-                ecs_iter_t it = ecs_children(vl_it.world, vl_it.entities[i]);
-                int childrenCount = 0;
-                while (ecs_children_next(&it)) {
-                    for (int c = 0; c < it.count; c++) {
-                        childrenCount++;
-                    }
-                }
-                // LayoutPos* positioner = calloc(sizeof(LayoutPos), childrenCount);
-                it = ecs_children(vl_it.world, vl_it.entities[i]);
-                while (ecs_children_next(&it)) {
-                    for (int c = 0; c < it.count; c++) {
-                        // TODO: VerticalLayout should probably place children within proxy child
-                        // TODO: Update child world pos?
-                        ecs_entity_t child = it.entities[c];
-                        if (ecs_is_valid(world, child))
-                        {
-                            Position* pos = ecs_get_mut_pair(world, child, Position, Relative);
-                            UIElementBounds* bounds = ecs_get_mut(world, child, UIElementBounds);
-                            if (pos && bounds)
-                            {
-                                // positioner[childIndex].height = height;
-                                // positioner[childIndex].e = child;
-                                pos->y = height;
-                                height += (-bounds->min_y + bounds->max_y) + vl[i].padding;
-                            }
-                            childIndex++;
-                        }
-                    }
-                }
+                // int childIndex = 0;
+                // int32_t height = 0;
+                // ecs_iter_t it = ecs_children(vl_it.world, vl_it.entities[i]);
+                // int childrenCount = 0;
+                // while (ecs_children_next(&it)) {
+                //     for (int c = 0; c < it.count; c++) {
+                //         childrenCount++;
+                //     }
+                // }
+                // // LayoutPos* positioner = calloc(sizeof(LayoutPos), childrenCount);
+                // it = ecs_children(vl_it.world, vl_it.entities[i]);
+                // while (ecs_children_next(&it)) {
+                //     for (int c = 0; c < it.count; c++) {
+                //         // TODO: VerticalLayout should probably place children within proxy child
+                //         // TODO: Update child world pos?
+                //         ecs_entity_t child = it.entities[c];
+                //         if (ecs_is_valid(world, child))
+                //         {
+                //             Position* pos = ecs_get_mut_pair(world, child, Position, Relative);
+                //             UIElementBounds* bounds = ecs_get_mut(world, child, UIElementBounds);
+                //             if (pos && bounds)
+                //             {
+                //                 // positioner[childIndex].height = height;
+                //                 // positioner[childIndex].e = child;
+                //                 pos->y = height;
+                //                 height += (-bounds->min_y + bounds->max_y) + vl[i].padding;
+                //             }
+                //             childIndex++;
+                //         }
+                //     }
+                // }
                 Position* layoutPos = ecs_get_mut_pair(world, vl_it.entities[i], Position, Local);
-                layoutPos->y = -height;
+                // layoutPos->y = -height;
+                // layoutPos->y = -vl->height;
+                vl->height = 0;
                 
                 // printf("VerticalLayout has %d children\n", childrenCount);
                 // for (int u = 0; u < childrenCount; u++)
@@ -2206,12 +2545,9 @@ int main(int argc, char *argv[]) {
 
                             printf("Agent: %s\n", agent_name);
                             
-                            ecs_entity_t agentDialogue = ecs_new_entity(world, 0);
-                            ecs_add_pair(world, agentDialogue, EcsIsA, DialogueItem);
+                            ecs_entity_t agentDialogue = ecs_new_w_pair(world, EcsIsA, DialogueItem);
+                            ecs_add_pair(world, agentDialogue, EcsChildOf, ecs_lookup_fullpath(world, "dialogue_frame.active_dialogue_history"));
 
-                            // ecs_set_pair(world, agentDialogue, Position, World, {6, agentsCreated*138});
-                            printf("Set agent at pos y %d", agentsCreated*138);
-                            ecs_set_pair(world, agentDialogue, Position, Local, {6, agentsCreated*138});
                             Sprite* agent = ecs_get_mut(world, ecs_lookup_child(world, agentDialogue, "DialogueAvatarIcon"), Sprite);
                             char agent_path[128];
                             sprintf(agent_path, "../res/%s.png", agent_name);
@@ -2228,6 +2564,7 @@ int main(int argc, char *argv[]) {
                             strcpy(agent_paragraph_loader->filepath, event->name); // Copy the string
                             printf("Stored filepath: %s\n", agent_paragraph_loader->filepath);
                             free(filename);
+                            ecs_add(world, agentDialogue, SequenceLayoutItem);
 
                             // TODO: Figure out why the prefab being added to a parent is not properly propagating positions...
                             // Position* hip = ecs_get_mut_pair(world, ecs_lookup(world, "dialogue_history"), Position, World);
