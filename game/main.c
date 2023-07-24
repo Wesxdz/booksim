@@ -144,6 +144,7 @@ ECS_TAG_DECLARE(Local);
 ECS_TAG_DECLARE(Relative);
 
 ECS_TAG_DECLARE(UserChat);
+ECS_TAG_DECLARE(UpdateLayout);
 
 ECS_STRUCT(Position, {
     int32_t x;
@@ -179,6 +180,17 @@ typedef struct ChatCreated
     ecs_entity_t chatItem;
 } ChatCreated;
 ECS_COMPONENT_DECLARE(ChatCreated);
+
+typedef struct SegmentCreated
+{
+    ecs_entity_t loop;
+    float startAngle;
+    float endAngle;
+    Color color;
+    char* str;
+    int num;
+} SegmentCreated;
+ECS_COMPONENT_DECLARE(SegmentCreated);
 
 ECS_STRUCT(Movable, {
     bool is_grabbed;
@@ -345,42 +357,40 @@ void RenderSelectedBox(ecs_iter_t *it) {
     SceneGraph* sc = ecs_field(it, SceneGraph, 3);
     SDL_Interface* sdl = ecs_field(it, SDL_Interface, 5);
 
-for (int i = 0; i < it->count; i++) 
-{
-    // create SDL_Rect for the box around the text
-    SDL_Rect rect;
-    rect.x = p[i].x - 2; // subtract padding from position
-    rect.y = p[i].y + 2; // subtract padding from position
-    if (t[i].surface)
+    for (int i = 0; i < it->count; i++) 
     {
-        rect.w = t[i].surface->w + 4; // add twice the padding to the width
-        rect.h = t[i].surface->h - 1; // add twice the padding to the height
-    } else
-    {
-        rect.w = 0;
-        rect.h = 0;
+        // create SDL_Rect for the box around the text
+        SDL_Rect rect;
+        rect.x = p[i].x - 2; // subtract padding from position
+        rect.y = p[i].y + 2; // subtract padding from position
+        if (t[i].surface)
+        {
+            rect.w = t[i].surface->w + 4; // add twice the padding to the width
+            rect.h = t[i].surface->h - 1; // add twice the padding to the height
+        } else
+        {
+            rect.w = 0;
+            rect.h = 0;
+        }
+
+        // draw the box
+        SDL_SetRenderDrawColor(sdl->renderer, 255, 255, 255, 255); // set color to white for the outline
+        SDL_RenderDrawRect(sdl->renderer, &rect);
+
+        if (sc[i].children_count)
+        {
+            // create SDL_Rect for the playful bright purple square
+            SDL_Rect purple_rect;
+            purple_rect.x = rect.x - (rect.h+2); // position it right after the previous box
+            purple_rect.y = rect.y; // same y position as previous box
+            purple_rect.w = rect.h+1; // width equals to height of previous box to make a square
+            purple_rect.h = rect.h; // same height as previous box
+
+            // draw the purple box
+            SDL_SetRenderDrawColor(sdl->renderer, 151, 41, 255, 255); // set color to bright purple
+            SDL_RenderDrawRect(sdl->renderer, &purple_rect);
+        }
     }
-
-    // draw the box
-    SDL_SetRenderDrawColor(sdl->renderer, 255, 255, 255, 255); // set color to white for the outline
-    SDL_RenderDrawRect(sdl->renderer, &rect);
-
-    if (sc[i].children_count)
-    {
-        // create SDL_Rect for the playful bright purple square
-        SDL_Rect purple_rect;
-        purple_rect.x = rect.x - (rect.h+2); // position it right after the previous box
-        purple_rect.y = rect.y; // same y position as previous box
-        purple_rect.w = rect.h+1; // width equals to height of previous box to make a square
-        purple_rect.h = rect.h; // same height as previous box
-
-        // draw the purple box
-        SDL_SetRenderDrawColor(sdl->renderer, 151, 41, 255, 255); // set color to bright purple
-        SDL_RenderDrawRect(sdl->renderer, &purple_rect);
-    }
-}
-
-
 }
 
 // void IndicateSelectedSprite(ecs_iter_t *it) {
@@ -504,13 +514,13 @@ void AlignmentDeterminePosition(ecs_iter_t* it)
         float boff_y = 0;
         if (parent_bounds)
         {
-            pboff_x = parent_bounds->min_x + align[i].parent_horizontal_percent * (parent_bounds->max_x - parent_bounds->min_x);
-            pboff_y = parent_bounds->min_y + align[i].parent_vertical_percent * (parent_bounds->max_y - parent_bounds->min_y);
+            pboff_x = parent_bounds->min_x + align[i].parent_horizontal_percent * (parent_bounds->max_x);
+            pboff_y = parent_bounds->min_y + align[i].parent_vertical_percent * (parent_bounds->max_y);
         }
         if (bounds)
         {
-            boff_x = (-1.0f+align[i].self_horizontal_percent) * (bounds[i].max_x - bounds[i].min_x);
-            boff_y = (-1.0f+align[i].self_vertical_percent) * (bounds[i].max_y - bounds[i].min_y);
+            boff_x = (-1.0f+align[i].self_horizontal_percent) * (bounds[i].max_x);
+            boff_y = (-1.0f+align[i].self_vertical_percent) * (bounds[i].max_y);
         }
         relative_pos[i].x = pboff_x + boff_x;
         relative_pos[i].y = pboff_y + boff_y;
@@ -637,7 +647,7 @@ void UserChatSubmit(ecs_iter_t* it)
         ecs_entity_t chatItemInst = ecs_new_w_pair(it->world, EcsIsA, UserChatItem);
         ecs_entity_t UserChatMessage = ecs_lookup_child(it->world, UserChatItem, "UserChatMessage");
 
-        ecs_entity_t adh = ecs_lookup_fullpath(it->world, "dialogue_frame.active_dialogue_history");
+        ecs_entity_t adh = ecs_lookup_fullpath(it->world, "canvas_ui.dialogue_frame.active_dialogue_history");
         ecs_add_pair(it->world, chatItemInst, EcsChildOf, adh);
 
         ecs_entity_t chat = ecs_new(it->world, 0);
@@ -984,27 +994,6 @@ void ConsumeEvents(ecs_iter_t* it)
     }
 }
 
-// void GenTextTexture(ecs_iter_t* it)
-// {
-//     Text* text = ecs_field(it, Text, 1);
-//     Font* font = ecs_field(it, Font, 3);
-//     SDL_Interface* sdl = ecs_field(it, SDL_Interface, 4);
-//     for (int i = 0; i < it->count; it++)
-//     {
-//         if (text[i].surface) {
-//             SDL_FreeSurface(text[i].surface);
-//         }
-//         if (text[i].texture) {
-//             SDL_DestroyTexture(text[i].texture);
-//         }
-
-//         // Create new surface and texture
-//         // text[i].surface = TTF_RenderUTF8_LCD(font->font, text[i].str, (SDL_Color){255, 128, 128, 255}, (SDL_Color){128, 128, 128, 255});
-//         // text[i].texture = SDL_CreateTextureFromSurface(sdl->renderer, text[i].surface);
-//         text[i].changed = 0;  // Mark text as unchanged
-//     }
-// }
-
 void GenParagraphTexture(ecs_iter_t* it)
 {
     Paragraph* paragraph = ecs_field(it, Paragraph, 1);
@@ -1040,7 +1029,6 @@ void UpdateTextSurface(ecs_iter_t *it) {
     SDL_Interface* sdl = ecs_field(it, SDL_Interface, 6);
 
 
-    // printf("RENDER TEXT\n");
     for (int i = 0; i < it->count; i++) {
         if (!settings || settings[i].visible)
         {
@@ -1103,8 +1091,6 @@ void MouseWheelScrollLayout(ecs_iter_t* it)
 
     for (int i = 0; i < it->count; i++)
     {
-        printf("Scroll layout %d\n", local_pos[i].y);
-        printf("Scroll layout %d\n", event->y*16.0f);
         local_pos[i].y += event->y*16;
     }
 }
@@ -1112,16 +1098,194 @@ void MouseWheelScrollLayout(ecs_iter_t* it)
 void ScrollSystemCompressor(ecs_iter_t* it) {
     SystemCompressor* compressor = ecs_field(it, SystemCompressor, 1);
     EventMouseWheel* event = ecs_field(it, EventMouseWheel, 2);
-    EventKeyInput* keyEvent = ecs_field(it, EventKeyInput, 3);
-    
+
+    // ecs_delete_children(it->world, it->entities[0]);
     for (int i = 0; i < it->count; i++) {
+        if (event)
+        {
+            // TODO: keep track of keyboard state
+            // compressor[i].startPos = (compressor[i].startPos+event->y)%compressor[i].systemCount;
+            // ecs_add(it->world, it->entities[0], UpdateLayout);
             // if shift key is held, change the number of visible segments
-        if (keyEvent->keycode == SDLK_LSHIFT || keyEvent->keycode == SDLK_RSHIFT) {
-            compressor[i].visibleSegments += event->y;
-            compressor[i].visibleSegments = clamp(compressor[i].visibleSegments, compressor[i].minSegments, compressor[i].maxSegments);
-        } else {
-            compressor[i].startPos = (compressor[i].startPos+1)%compressor[i].systemCount;
+            // if (keyEvent->keycode == SDLK_LSHIFT || keyEvent->keycode == SDLK_RSHIFT) {
+            //     compressor[i].visibleSegments += event->y;
+            //     compressor[i].visibleSegments = clamp(compressor[i].visibleSegments, compressor[i].minSegments, compressor[i].maxSegments);
+            //     ecs_add(it->world, it->entities[0], UpdateLayout);
+            // } else {
+
+            // }
         }
+    }
+}
+
+void ResetSystemCompressor(ecs_iter_t* it) {
+    SystemCompressor* compressor = ecs_field(it, SystemCompressor, 1);
+    EventMouseWheel* event = ecs_field(it, EventMouseWheel, 2);
+    
+    // ecs_delete_children(it->world, it->entities[0]);
+}
+
+void InitSegment(ecs_iter_t* it)
+{
+    SegmentCreated* sc = ecs_field(it, SegmentCreated, 1);
+    Font* font = ecs_field(it, Font, 2);
+
+    printf("InitSegment\n");
+
+    ecs_world_t* world = it->world;
+    ecs_entity_t SystemSegment = ecs_lookup_fullpath(world, "SystemSegment"); 
+    ecs_entity_t SystemName = ecs_lookup_child(world, SystemSegment, "SystemName");
+    ecs_entity_t SystemNumber = ecs_lookup_child(world, SystemSegment, "SystemNumber");
+    ecs_entity_t DualLine = ecs_lookup_child(world, SystemSegment, "DualLine");
+    ecs_entity_t SecondaryLine = ecs_lookup_child(world, DualLine, "SecondaryLine");
+
+    for (int i = 0; i < it->count; i++)
+    {
+        ecs_entity_t exampleSegment = it->entities[0];
+
+        ecs_entity_t name = ecs_get_target(world, exampleSegment, SystemName, 0);
+        ecs_set_pair(world, name, Position, Local, {0, sc[i].startAngle});
+        Text* systemNameLabel = ecs_get_mut(world, name, Text);
+        strcpy(systemNameLabel->str, sc[i].str);
+        systemNameLabel->changed = true;
+
+        ecs_entity_t number = ecs_get_target(world, exampleSegment, SystemNumber, 0);
+        char numstr[sc[i].num/10];
+        sprintf(numstr, "%d", sc[i].num);
+        Text* systemNumberLabel = ecs_get_mut(world, number, Text);
+        strcpy(systemNumberLabel->str, numstr);
+        systemNumberLabel->changed = true;
+
+        // Calculate the average angle in radians
+        double avgAngle = ((sc[i].startAngle + sc[i].endAngle) / 2.0) * (M_PI / 180.0);
+
+        // Calculate the average radius
+        double avgRadius = (96 + 128) / 2.0;
+
+        // Calculate the position of the center point
+        double centerX = avgRadius * cos(avgAngle);
+        double centerY = avgRadius * sin(avgAngle);
+
+        ecs_set_pair(world, number, Position, Local, {centerX+128, centerY+128});
+        ecs_set(world, number, Align, {0.0f, 0.0f, 0.5f, 0.5f});
+        
+        // Calculate the outer radius
+        double padding = 16.0;
+        double outerRadius = avgRadius + padding;  // Add some padding to move the text further out
+        
+        double outerX = 128.0 * cos(avgAngle);
+        double outerY = 128.0 * sin(avgAngle);
+
+        // Calculate the position of the center point for the text
+        double textCenterX = outerRadius * cos(avgAngle);
+        double textCenterY = outerRadius * sin(avgAngle);
+        // Determine horizontal alignment based on angle
+        // float alignX = 0.5 * (cos(avgAngle) + 1);  // This will map [-1, 1] range of cos to [0, 1] range for alignX
+        // float alignY = 0.5 * (sin(avgAngle) + 1);  // This will map [-1, 1] range of sin to [0, 1] range for alignY
+
+        // ecs_set(world, name, Align, {0.0f, 0.0f, alignX, alignY});
+
+        // ecs_set(world, name, Text, {line, NULL, NULL, 1});
+        ecs_set(world, exampleSegment, Color, {sc[i].color.r, sc[i].color.g, sc[i].color.b, sc[i].color.a});
+        ecs_set(world, exampleSegment, ArcSegment, {96, 128, sc[i].startAngle, sc[i].endAngle});
+
+        ecs_entity_t firstLine = ecs_get_target(world, exampleSegment, DualLine, 0);
+        // ecs_entity_t secondLine = ecs_get_target(world, exampleSegment, SecondaryLine, 0);
+        // ecs_entity_t secondLine = ecs_get_target(world, firstLine, SecondaryLine, 0);
+        ecs_entity_t secondLine = ecs_get_target(world, firstLine, SecondaryLine, 0);
+        int textWidth, textHeight;
+        TTF_SizeText(font->font, sc[i].str, &textWidth, &textHeight);
+        double underlineLen = textWidth; // TODO: Calculate from width of text
+        if (centerX >= avgRadius-128)
+        {
+            ecs_set(world, firstLine, Line, {outerX+128, outerY+128, 128*2, textCenterY+128});
+            ecs_set(world, secondLine, Line, {128*2, textCenterY+128, 128*2+underlineLen, textCenterY+128});
+            ecs_set_pair(world, name, Position, Local, {128*2, textCenterY+128});
+            ecs_set(world, name, Align, {0.0f, 0.0f, 1.0, 0.0});
+        } else
+        {
+            ecs_set(world, firstLine, Line, {outerX+128, outerY+128, 0, textCenterY+128});
+            ecs_set(world, secondLine, Line, {0, textCenterY+128, -underlineLen, textCenterY+128});
+            ecs_set_pair(world, name, Position, Local, {0, textCenterY+128});
+            ecs_set(world, name, Align, {0.0f, 0.0f, 0.0, 0.0});
+        }
+        ecs_set(world, firstLine, Color, {sc[i].color.r, sc[i].color.g, sc[i].color.b, sc[i].color.a});
+
+        // TODO: Adding children on the same frame as deleting them...
+        ecs_add_pair(world, exampleSegment, EcsChildOf, sc[i].loop);
+
+        ecs_remove(world, exampleSegment, SegmentCreated);
+    }
+
+}
+
+void RegenerateSystemLoop(ecs_iter_t* it)
+{
+    ecs_world_t* world = it->world;
+    ecs_remove(world, it->entities[0], UpdateLayout);
+
+    SystemCompressor* sc = ecs_field(it, SystemCompressor, 1);
+    ecs_entity_t SystemSegment = ecs_lookup(world, "SystemSegment"); 
+
+    for (int i = 0; i < it->count; i++)
+    {
+        printf("minSegments: %d, maxSegments: %d, visibleSegments: %d, systemCount: %d, startPos: %d\n", 
+        sc[i].minSegments, 
+        sc[i].maxSegments, 
+        sc[i].visibleSegments, 
+        sc[i].systemCount, 
+        sc[i].startPos);
+        FILE* file = fopen("systems.txt", "r");
+        float increment = 360.0 / sc[i].visibleSegments;
+        int functionCount = sc[i].systemCount;
+        int l = 0;
+        char line[1024];
+        while (fgets(line, 1024, file) != NULL) {
+            int overflow = 0;
+            if (sc[i].startPos + sc[i].visibleSegments > functionCount)
+            {
+                overflow = sc[i].startPos + sc[i].visibleSegments - functionCount;
+            }
+            bool shouldRender = (l >= sc[i].startPos && l < sc[i].startPos + sc[i].visibleSegments) || (l < overflow);
+            if (!shouldRender)
+            {
+                l++;
+                continue;
+            }
+            printf("Render segment\n");
+            float start = l * increment;
+            float end = (l + 1) * increment;
+            printf("Function %d: Start angle = %.2f, End angle = %.2f\n", l + 1, start, end);
+
+            ecs_defer_suspend(world);
+            ecs_entity_t exampleSegment = ecs_new(world, 0);
+            ecs_defer_resume(world);
+            ecs_add_pair(world, exampleSegment, EcsIsA, SystemSegment);
+            // ecs_entity_t exampleSegment = ecs_new_w_pair(world, EcsIsA, SystemSegment);
+            Color gradient[] = {
+                {0x00, 0xA8, 0xFF, 0xFF},
+                {0x00, 0xC1, 0xFF, 0xFF},
+                {0x00, 0xD6, 0xF2, 0xFF},
+                {0x00, 0xE8, 0xD3, 0xFF},
+                {0x59, 0xF5, 0xAD, 0xFF},
+                {0xB3, 0xFD, 0x8B, 0xFF},
+                {0xFF, 0xFF, 0x78, 0xFF}
+            };
+            char* newline = strchr(line, '\n');
+            if (newline != NULL) {
+                *newline = '\0';  // Null-terminate the string at the newline character
+            }
+
+            // Create a new string containing the line up to the newline (or the entire line, if there's no newline)
+            char* copiedStr = malloc((newline ? newline - line : strlen(line)) + 1);  // Add 1 for the null terminator
+            strncpy(copiedStr, line, newline ? newline - line : strlen(line));
+            copiedStr[newline ? newline - line : strlen(line)] = '\0';  // Ensure null-termination
+
+            ecs_set(world, exampleSegment, SegmentCreated, {it->entities[0], start, end, gradient[l % 7], copiedStr, l});
+
+            l++;
+        }
+        fclose(file);
     }
 }
 
@@ -1304,7 +1468,7 @@ bool isValidTexture(SDL_Texture *texture) {
 void RenderCommander(ecs_iter_t* it)
 {
     // printf("Render COMMANDER!\n");
-    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 8);
+    SDL_Interface* sdl = ecs_field(it, SDL_Interface, 9);
     Position* p = ecs_field(it, Position, 1);
     Renderable* renderable = ecs_field(it, Renderable, 2);
 
@@ -1314,6 +1478,8 @@ void RenderCommander(ecs_iter_t* it)
     Paragraph* para = ecs_field(it, Paragraph, 5);
     Line* l = ecs_field(it, Line, 6);
     Box* box = ecs_field(it, Box, 7);
+
+    Color* color = ecs_field(it, Color, 8);
 
     if (s)
     {
@@ -1355,7 +1521,13 @@ void RenderCommander(ecs_iter_t* it)
         for (int i = 0; i < it->count; i++)
         {
             if (!renderable[i].visible) continue;
-            SDL_SetRenderDrawColor(sdl->renderer, 128, 128, 128, 255);
+            if (color)
+            {
+                SDL_SetRenderDrawColor(sdl->renderer, color[i].r, color[i].g, color[i].b, color[i].a);
+            } else
+            {
+                SDL_SetRenderDrawColor(sdl->renderer, 128, 128, 128, 255);
+            }
             // SDL_SetRenderDrawColor(sdl->renderer, 255, 0, 0, 255);
             SDL_RenderDrawLine(sdl->renderer, p[i].x + l[i].x1, p[i].y + l[i].y1, p[i].x +  l[i].x2, p[i].y + l[i].y2);
         }
@@ -1722,6 +1894,31 @@ ecs_entity_t lambda_function(lambda_parameters* params)
     return NULL;
 }
 
+// void delete_children_rec(ecs_world_t* world, ecs_entity_t root)
+// {
+//     ecs_iter_t it = ecs_children(world, root);
+//     while (ecs_children_next(&it)) {
+//         for (int i = 0; i < it.count; i++)
+//         {
+//             ecs_entity_t child = it.entities[i];
+//             delete_children_recursive(world, child);
+//         }
+//     }
+// }
+
+// void delete_children_recursive(ecs_world_t* world, ecs_entity_t root)
+// {
+//     ecs_iter_t it = ecs_children(world, root);
+//     while (ecs_children_next(&it)) {
+//         for (int i = 0; i < it.count; i++)
+//         {
+//             ecs_entity_t child = it.entities[i];
+//             delete_children_recursive(world, child);
+//         }
+//     }
+//     ecs_delete(world, root);
+// }
+
 int get_children_count(ecs_world_t* world, ecs_entity_t root)
 {
     int count = 0;
@@ -1776,6 +1973,7 @@ void CalculateElementBounds(ecs_iter_t* it)
 
     Sprite* sprite = ecs_field(it, Sprite, 3);
     Box* box = ecs_field(it, Box, 4);
+    Text* text = ecs_field(it, Text, 5);
 
     for (int i = 0; i < it->count; i++)
     {
@@ -1785,16 +1983,24 @@ void CalculateElementBounds(ecs_iter_t* it)
         {
             bounds[i].min_x = min(bounds[i].min_x, x);
             bounds[i].min_y = min(bounds[i].min_y, y);
-            bounds[i].max_x = max(bounds[i].max_x, x + sprite[i].width);
-            bounds[i].max_y = max(bounds[i].max_y, y + sprite[i].height);
+            bounds[i].max_x = max(bounds[i].max_x, sprite[i].width);
+            bounds[i].max_y = max(bounds[i].max_y, sprite[i].height);
         }
         if (box) {
-            bounds[i].min_x = min(bounds[i].min_x, x + box[i].x);
-            bounds[i].min_y = min(bounds[i].min_y, y + box[i].y);
-            bounds[i].max_x = max(bounds[i].max_x, x + box[i].x + box[i].w);
-            bounds[i].max_y = max(bounds[i].max_y, y + box[i].y + box[i].h);
+            bounds[i].min_x = min(bounds[i].min_x, x);
+            bounds[i].min_y = min(bounds[i].min_y, y);
+            bounds[i].max_x = max(bounds[i].max_x, box[i].x + box[i].w);
+            bounds[i].max_y = max(bounds[i].max_y, box[i].y + box[i].h);
+        } if (text)
+        {
+            int textWidth, textHeight;
+            SDL_QueryTexture(text[i].texture, NULL, NULL, &textWidth, &textHeight);
+            bounds[i].min_x = min(bounds[i].min_x, x);
+            bounds[i].min_y = min(bounds[i].min_y, y);
+            bounds[i].max_x = max(bounds[i].max_x, textWidth);
+            bounds[i].max_y = max(bounds[i].max_y, textHeight);
         }
-        printf("Bounds: (%d, %d, %d, %d)\n", bounds[i].min_x, bounds[i].min_y, bounds[i].max_x, bounds[i].max_y);
+        // printf("Bounds: (%d, %d, %d, %d)\n", bounds[i].min_x, bounds[i].min_y, bounds[i].max_x, bounds[i].max_y);
     }
 }
 
@@ -1804,7 +2010,7 @@ void create_mock_dialogue(ecs_world_t* world, SDL_Renderer* renderer, char* agen
     ecs_defer_suspend(world);
     ecs_entity_t agentDialogue = ecs_new_w_pair(world, EcsIsA, DialogueItem);
     // ecs_entity_t agentDialogue = ecs_new(world, 0);
-    ecs_add_pair(world, agentDialogue, EcsChildOf, ecs_lookup_fullpath(world, "dialogue_frame.active_dialogue_history"));
+    ecs_add_pair(world, agentDialogue, EcsChildOf, ecs_lookup_fullpath(world, "canvas_ui.dialogue_frame.active_dialogue_history"));
     // ecs_add_pair(world, agentDialogue, EcsIsA, DialogueItem);
 
     Sprite* agent = ecs_get_mut(world, ecs_lookup_child(world, agentDialogue, "DialogueAvatarIcon"), Sprite);
@@ -1932,6 +2138,7 @@ int main(int argc, char *argv[]) {
     ECS_COMPONENT_DEFINE(world, EventKeyInput);
     ECS_COMPONENT_DEFINE(world, SDL_Interface);
     ECS_COMPONENT_DEFINE(world, ChatCreated);
+    ECS_COMPONENT_DEFINE(world, SegmentCreated);
 
     ECS_TAG_DEFINE(world, Selected);
     ECS_TAG_DEFINE(world, Symbol);
@@ -1941,6 +2148,7 @@ int main(int argc, char *argv[]) {
     ECS_TAG_DEFINE(world, Background);
     ECS_TAG_DEFINE(world, UserChat);
     ECS_TAG_DEFINE(world, ManualBounds);
+    ECS_TAG_DEFINE(world, UpdateLayout);
 
     // TODO: Vertical/horizontal scene graph hierarchy lines
 
@@ -2011,6 +2219,8 @@ int main(int argc, char *argv[]) {
     while (fgets(line, MAX_LINE, file) != NULL) {
         functionCount++;
     }
+    
+    // ECS_OBSERVER(world, RegenerateSystemLoop, EcsOnAdd, SystemCompressor, UpdateLayout, Font(resource));
 
     ecs_entity_t Transformable = ecs_new_prefab(world, "Transformable");
     ecs_set_pair(world, Transformable, Position, Local, {0, 0});
@@ -2040,12 +2250,9 @@ int main(int argc, char *argv[]) {
     ecs_add_pair(world, SystemLoop, EcsIsA, Transformable);
     ecs_add_pair(world, SystemLoop, EcsIsA, UIElement);
     ecs_set(world, SystemLoop, SystemCompressor, {1, 9, 7, functionCount, 0});
-    ecs_set(world, SystemLoop, Align, {0.0f, 0.0f, 1.0f, 1.0f});
-    ecs_override(world, SystemLoop, Align);
 
     ecs_entity_t systemLoop = ecs_set_name(world, 0, "system_loop");
     ecs_add_pair(world, systemLoop, EcsIsA, SystemLoop);
-    // ecs_set_pair(world, systemLoop, Position, Local, {200, 200});
     ecs_add_pair(world, systemLoop, EcsChildOf, canvasUI);
     ecs_set(world, systemLoop, Align, {0.5f, 0.5f, 0.5f, 0.5f});
 
@@ -2055,13 +2262,30 @@ int main(int argc, char *argv[]) {
 
     ecs_set(world, SystemSegment, ArcSegment, {96, 128, 0, 360});
     // ecs_override(world, SystemSegment, ArcSegment);
+    ecs_set(world, SystemSegment, Color, {0x00, 0xA8, 0xFF, 0xFF});
     ecs_add(world, SystemSegment, Sprite);
     ecs_override(world, SystemSegment, Sprite);
     ecs_set(world, SystemSegment, Renderable, {0, true});
     ecs_override(world, SystemSegment, Renderable);
 
+    // TODO: LineCreator, or three lines to normalize vertical spacing
+    ecs_entity_t DualLine = ecs_new_prefab(world, "DualLine");
+    ecs_add_pair(world, DualLine, EcsIsA, Transformable);
+    ecs_add(world, DualLine, Line);
+    ecs_set(world, DualLine, Renderable, {0, true});
+    ecs_add_pair(world, DualLine, EcsChildOf, SystemSegment);
+    ecs_add_pair(world, DualLine, EcsSlotOf, SystemSegment);
+
+        ecs_entity_t SecondaryLine = ecs_new_prefab(world, "SecondaryLine");
+        ecs_add_pair(world, SecondaryLine, EcsIsA, Transformable);
+        ecs_add(world, SecondaryLine, Line);
+        ecs_set(world, SecondaryLine, Renderable, {0, true});
+        ecs_add_pair(world, SecondaryLine, EcsChildOf, DualLine);
+        ecs_add_pair(world, SecondaryLine, EcsSlotOf, DualLine);
+
     ecs_entity_t SystemName = ecs_new_prefab(world, "SystemName");
     ecs_add_pair(world, SystemName, EcsIsA, Transformable);
+    ecs_add_pair(world, SystemName, EcsIsA, UIElement);
     ecs_set(world, SystemName, Text, {"", NULL, NULL, 1});
     ecs_override(world, SystemName, Text);
     ecs_set(world, SystemName, Renderable, {10, true});
@@ -2071,6 +2295,7 @@ int main(int argc, char *argv[]) {
 
     ecs_entity_t SystemNumber = ecs_new_prefab(world, "SystemNumber");
     ecs_add_pair(world, SystemNumber, EcsIsA, Transformable);
+    ecs_add_pair(world, SystemNumber, EcsIsA, UIElement);
     ecs_set(world, SystemNumber, Text, {"0", NULL, NULL, 1});
     ecs_set(world, SystemNumber, Color, {0, 0, 0, 255});
     ecs_override(world, SystemNumber, Text);
@@ -2079,54 +2304,7 @@ int main(int argc, char *argv[]) {
     ecs_add_pair(world, SystemNumber, EcsSlotOf, SystemSegment);
 
     ECS_OBSERVER(world, ArcSegmentBlit, EcsOnSet, ArcSegment, Sprite, ?Color, SDL_Interface(sdl));
-    // ECS_OBSERVER(world, GenTextTexture, EcsOnSet, Text, Renderable, Font(resource), SDL_Interface(sdl));
-
-    file = fopen("systems.txt", "r");
-    float increment = 360.0 / functionCount;
-    int l = 0;
-    while (fgets(line, MAX_LINE, file) != NULL) {
-        float start = l * increment;
-        float end = (l + 1) * increment;
-        printf("Function %d: Start angle = %.2f, End angle = %.2f\n", l + 1, start, end);
-        ecs_entity_t exampleSegment = ecs_new_w_pair(world, EcsIsA, SystemSegment);
-        ecs_entity_t name = ecs_get_target(world, exampleSegment, SystemName, 0);
-        ecs_set_pair(world, name, Position, Local, {0, start});
-        Text* systemNameLabel = ecs_get_mut(world, name, Text);
-        char *newline = NULL;
-        newline = strchr(line, '\n');
-        if (newline != NULL) {
-            *newline = '\0';
-        }
-        strcpy(systemNameLabel->str, newline);
-
-        strcpy(systemNameLabel->str, line);
-        systemNameLabel->changed = true;
-
-        ecs_entity_t number = ecs_get_target(world, exampleSegment, SystemNumber, 0);
-        char numstr[functionCount/10];
-        sprintf(numstr, "%d", l);
-        Text* systemNumberLabel = ecs_get_mut(world, number, Text);
-        strcpy(systemNumberLabel->str, numstr);
-        systemNumberLabel->changed = true;
-
-        // Calculate the average angle in radians
-        double avgAngle = ((start + end) / 2.0) * (M_PI / 180.0);
-
-        // Calculate the average radius
-        double avgRadius = (96 + 128) / 2.0;
-
-        // Calculate the position of the center point
-        double centerX = avgRadius * cos(avgAngle);
-        double centerY = avgRadius * sin(avgAngle);
-
-        ecs_set_pair(world, number, Position, Local, {centerX+128, centerY+128});
-
-        // ecs_set(world, name, Text, {line, NULL, NULL, 1});
-        ecs_set(world, exampleSegment, ArcSegment, {96, 128, start, end});
-        ecs_add_pair(world, exampleSegment, EcsChildOf, systemLoop);
-        l++;
-    }
-    fclose(file);
+    ecs_add(world, systemLoop, UpdateLayout);
 
     // TODO: Code that outputs pipeline stages with their sytems in call order
     // Either Flecs reflection or Clang
@@ -2294,18 +2472,18 @@ int main(int argc, char *argv[]) {
     // }
 
     ecs_entity_t DialogueHistory = ecs_new_prefab(world, "dialogue_history");
-    ecs_set_pair(world, DialogueHistory, Position, World, {0, 0});
-    ecs_override_pair(world, DialogueHistory, ecs_id(Position), World);
-    ecs_set_pair(world, DialogueHistory, Position, Local, {0, 0});
-    ecs_override_pair(world, DialogueHistory, ecs_id(Position), Local);
+    ecs_add_pair(world, DialogueHistory, EcsIsA, Transformable);
+    ecs_add_pair(world, DialogueHistory, EcsIsA, UIElement);
 
     ecs_entity_t dialogueFrame = ecs_new_entity(world, "dialogue_frame");
-    ecs_set_pair(world, dialogueFrame, Position, World, {0, 0});
-    ecs_set_pair(world, dialogueFrame, Position, World, {8, 264+138});
+    ecs_add_pair(world, dialogueFrame, EcsIsA, Transformable);
+    ecs_set_pair(world, dialogueFrame, Position, Local, {0, 264+138});
+    ecs_add_pair(world, dialogueFrame, EcsChildOf, canvasUI);
 
     ecs_entity_t activeDialogueHistory = ecs_new_entity(world, "active_dialogue_history");
     ecs_set(world, activeDialogueHistory, VerticalLayout, {8, 0});
     ecs_add_pair(world, activeDialogueHistory, EcsIsA, DialogueHistory);
+    ecs_set(world, activeDialogueHistory, Align, {0.5f, 0.5f, 0.5f, 0.5f});
     ecs_add_pair(world, activeDialogueHistory, EcsChildOf, dialogueFrame);
 
     ecs_entity_t DialogueItem = ecs_new_prefab(world, "DialogueItem");
@@ -2352,10 +2530,14 @@ int main(int argc, char *argv[]) {
 
     ecs_entity_t chatbox = ecs_new_entity(world, "chatbox");
     ecs_set(world, chatbox, Renderable, {100, true});
-    ecs_set_pair(world, chatbox, Position, World, {6, 264+138});
+    ecs_add_pair(world, chatbox, EcsIsA, Transformable);
+    ecs_add_pair(world, chatbox, EcsIsA, UIElement);
+    // ecs_set_pair(world, chatbox, Position, Local, {6, 264+138});
+    ecs_set(world, chatbox, Align, {0.5f, 1.0f, 0.5f, 0.0f});
     Sprite chatsprite = loadSprite(renderer, "../res/chatbox.png");
     ecs_set(world, chatbox, Sprite, {chatsprite.texture, chatsprite.width, chatsprite.height});
     ecs_add(world, chatbox, UserChat);
+    ecs_add_pair(world, chatbox, EcsChildOf, canvasUI);
 
         ecs_entity_t tb = ecs_new(world, 0);
         ecs_set(world, tb, Renderable, {100, true});
@@ -2386,11 +2568,11 @@ int main(int argc, char *argv[]) {
         ecs_add_pair(world, UserSelfContext, EcsChildOf, UserChatItem);
 
         ecs_entity_t UserChatMessage = ecs_new_prefab(world, "UserChatMessage");
-        ecs_add_pair(world, UserSelfContext, EcsIsA, Transformable);
-        ecs_add_pair(world, UserSelfContext, EcsIsA, UIElement);
+        ecs_add_pair(world, UserChatMessage, EcsIsA, Transformable);
+        ecs_add_pair(world, UserChatMessage, EcsIsA, UIElement);
         ecs_set_pair(world, UserChatMessage, Position, Local, {88, 8});
-        ecs_set(world, UserChatMessage, Renderable, {100, true});
-        ecs_set(world, UserChatMessage, Paragraph, {"", NULL, NULL, 0, 418-16});
+        ecs_set(world, UserChatMessage, Renderable, {200, true});
+        ecs_set(world, UserChatMessage, Paragraph, {"Example chat message", NULL, NULL, 0, 418-16});
         ecs_add_pair(world, UserChatMessage, EcsChildOf, UserChatItem);
         ecs_add_pair(world, UserChatMessage, EcsSlotOf, UserChatItem);
 
@@ -2413,7 +2595,7 @@ int main(int argc, char *argv[]) {
     ECS_SYSTEM(world, ConsumeEvents, EcsPostFrame, (ConsumeEvent, *));
     // ECS_SYSTEM(world, TransformCascadeHierarchy, EcsPreFrame, ?Position(parent|cascade), Transform);
     
-    ECS_SYSTEM(world, CalculateElementBounds, EcsPreUpdate, UIElementBounds, (Position, Local), ?Sprite, ?Box);
+    ECS_SYSTEM(world, CalculateElementBounds, EcsPreUpdate, UIElementBounds, (Position, Local), ?Sprite, ?Box, ?Text);
     ECS_SYSTEM(world, AlignmentDeterminePosition, EcsPreUpdate, (Position, Relative), Align, ?UIElementBounds, ?UIElementBounds(parent));
     ecs_system(world, {
     .entity = ecs_entity(world, {
@@ -2451,6 +2633,26 @@ int main(int argc, char *argv[]) {
         .callback = TransformCascadeHierarchy
     });
 
+    ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "RegenerateSystemLoop",
+            .add = { ecs_dependson(EcsPreUpdate) }
+        }),
+        .query.filter.expr = "SystemCompressor, UpdateLayout, [inout] *()",
+        .callback = RegenerateSystemLoop,
+        .no_readonly = true
+    });
+
+    ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "InitSegment",
+            .add = { ecs_dependson(EcsPreUpdate) }
+        }),
+        .query.filter.expr = "SegmentCreated, Font(resource), [inout] *()",
+        .callback = InitSegment,
+        .no_readonly = true
+    });
+
     ECS_SYSTEM(world, BubbleUpBounds, EcsPreUpdate, UIElementBounds(parent|up), UIElementBounds);
 
     ECS_SYSTEM(world, UpdateParagraph, EcsOnUpdate, Paragraph, ParagraphLoader);
@@ -2462,7 +2664,7 @@ int main(int argc, char *argv[]) {
     ECS_SYSTEM(world, ToggleSceneGraphHierarchy, EcsOnUpdate, [inout] SceneGraph(parent), Selected, EventKeyInput(input));
     ECS_SYSTEM(world, KeyNavSceneGraph, EcsOnUpdate, SceneGraph(parent), Selected, EventKeyInput(input), Text(component_editor));
     ECS_SYSTEM(world, MouseWheelScrollLayout, EcsOnUpdate, (Position, Local), VerticalLayout, EventMouseWheel(input));
-    ECS_SYSTEM(world, ScrollSystemCompressor, EcsOnUpdate, SystemCompressor, EventMouseWheel(input), EventKeyInput(input));
+    ECS_SYSTEM(world, ScrollSystemCompressor, EcsOnUpdate, SystemCompressor, EventMouseWheel(input), [inout] *());
     ECS_SYSTEM(world, ArrowKeyScrollLayout, EcsOnUpdate, (Position, Local), VerticalLayout, EventKeyInput(input));
     ECS_SYSTEM(world, MouseWheelNavSceneGraph, EcsOnUpdate, SceneGraph(parent), Selected, EventMouseWheel(input));
     ECS_SYSTEM(world, UpdateArrowDirection, EcsPostUpdate, SceneGraph(parent), (Position, Local), Sprite, ArrowStatus, SDL_Interface(sdl));
@@ -2482,7 +2684,7 @@ int main(int argc, char *argv[]) {
             .add = { ecs_dependson(EcsPostFrame) }
         }),
         .query = {
-            .filter.expr = "(Position, World), Renderable, ?Sprite, ?Text, ?Paragraph, ?Line, ?Box, SDL_Interface(sdl)",
+            .filter.expr = "(Position, World), Renderable, ?Sprite, ?Text, ?Paragraph, ?Line, ?Box, ?Color, SDL_Interface(sdl)",
             // .filter.terms = {
             //     {.id = ecs_id(SDL_Interface), .entity = ecs_id(sdl) },
             //     {.id = ecs_id(Renderable) },
@@ -2501,7 +2703,7 @@ int main(int argc, char *argv[]) {
     // ECS_SYSTEM(world, RenderSelectedBox, EcsPostFrame, (Position, World), Text, SceneGraph, Selected, SDL_Interface(sdl));
     ECS_SYSTEM(world, RenderPresent, EcsPostFrame, SDL_Interface);
 
-    ECS_SYSTEM(world, UserChatSubmit, EcsOnUpdate, Textbox, Text, EventKeyInput(input), UserChat(parent), VerticalLayout(dialogue_frame.active_dialogue_history));
+    ECS_SYSTEM(world, UserChatSubmit, EcsOnUpdate, Textbox, Text, EventKeyInput(input), UserChat(parent), VerticalLayout(canvas_ui.dialogue_frame.active_dialogue_history));
     ECS_SYSTEM(world, UserChatCreate, EcsPostFrame, ChatCreated, [out] Paragraph(), [out] Text());
     // ecs_system(world, {
     //     .entity = ecs_entity(world, {
@@ -2536,7 +2738,6 @@ int main(int argc, char *argv[]) {
 
     int agentsCreated = 0;
     while (ecs_progress(world, 0)) {
-
         ecs_iter_t vl_it = ecs_query_iter(world, qvl);
         while (ecs_query_next(&vl_it))
         {
@@ -2655,7 +2856,7 @@ int main(int argc, char *argv[]) {
                             printf("Agent: %s\n", agent_name);
                             
                             ecs_entity_t agentDialogue = ecs_new_w_pair(world, EcsIsA, DialogueItem);
-                            ecs_add_pair(world, agentDialogue, EcsChildOf, ecs_lookup_fullpath(world, "dialogue_frame.active_dialogue_history"));
+                            ecs_add_pair(world, agentDialogue, EcsChildOf, ecs_lookup_fullpath(world, "canvas_ui.dialogue_frame.active_dialogue_history"));
 
                             Sprite* agent = ecs_get_mut(world, ecs_lookup_child(world, agentDialogue, "DialogueAvatarIcon"), Sprite);
                             char agent_path[128];
